@@ -28,6 +28,7 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
     let mut tree: KGST<SeqElement, String> = KGST::new(SeqElement::E);
 
     let reader = fasta::Reader::from_file(file).unwrap();
+    let mut count:i32 = 0;
     
     for result in reader.records() {
 
@@ -64,6 +65,10 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
             }
             pb.println(format!("{}", result_data.id()));
             pb.inc(1);   
+            count+=1;
+            if(count%20==0){
+                break;
+            }
         }
     }
 
@@ -103,9 +108,6 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
     tree
 }
 
-fn save_tree(tree:KGST<SeqElement, String>){
-
-}
 
 fn search_fastq(mut tree:KGST<SeqElement, String>, fastq_file:&str, max_depth:i32, result_file:&str){
     let reader = fastq::Reader::from_file(fastq_file).unwrap();
@@ -168,13 +170,18 @@ fn search_fastq(mut tree:KGST<SeqElement, String>, fastq_file:&str, max_depth:i3
                             let mut ID:Vec<&str> = hit_ID.split('_').collect();
                             if !match_set.contains(&format!("{:?}", ID[0])){
                                 match_set.insert(format!("{:?}", ID[0]));
-                                fileRef.write_all(format!("{:?}\n", ID[0]).as_bytes()).expect("write failed");
+                                // fileRef.write_all(format!("{:?}\n", ID[0]).as_bytes()).expect("write failed");
 
                                 // fs::write(result_file, format!("{:?}", ID[0])).expect("Unable to write file");
                             }
                             
                         }
+                        
                     }
+                }
+                for id in match_set.iter(){
+                    let mut out_string:String = format!("{}\t{}\n", result_data.id(), id);
+                    fileRef.write_all(out_string.as_bytes()).expect("write failed");
                 }
                 
             }
