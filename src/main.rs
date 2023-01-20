@@ -15,6 +15,7 @@ enum SeqElement {
 }
 
 fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
+    println!("Building tree from {}", file);
     let reader = fasta::Reader::from_file(file).unwrap();
 
     let total_size = reader.records().count();
@@ -28,6 +29,8 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
     let mut tree: KGST<SeqElement, String> = KGST::new(SeqElement::E);
 
     let reader = fasta::Reader::from_file(file).unwrap();
+
+    let mut count = 20;
     
     for result in reader.records() {
 
@@ -62,12 +65,12 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
                 }
                 
             }
-            pb.println(result_data.id());
+            // pb.println(result_data.id());
             pb.inc(1);   
-            // count+=1;
-            // if(count%20==0){
-            //     break;
-            // }
+            count+=1;
+            if(count%20==0){
+                break;
+            }
         }
     }
 
@@ -102,7 +105,7 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
             strings.insert(format!("{}\n", result_data.id()), seq);
         }
     }
-    // tree.set_strings(strings);
+    tree.set_strings(strings);
     tree
 }
 
@@ -156,7 +159,7 @@ fn query_tree(tree:&mut KGST<SeqElement, String>, q_seq:Vec<SeqElement>, max_dep
             let matches: Vec<(&String, &i32)> = tree.find(sub_seq);
             if !matches.is_empty(){
                 for (hit_id, hit_idx) in matches.iter(){
-                    println!("{}", format!("{}:\t{}", hit_id, hit_idx));
+                    match_set.insert(((**hit_id).clone(), **hit_idx));
                 }
             }
         }
@@ -164,12 +167,20 @@ fn query_tree(tree:&mut KGST<SeqElement, String>, q_seq:Vec<SeqElement>, max_dep
     match_set
 }
 
-// fn save_tree(tree: &mut KGST<SeqElement, String>, output_path: String){
-//     std::fs::write(
-//         output_path,
-//         serde_json::to_string_pretty(tree).unwrap(),
-//     ).unwrap();
-// }
+fn save_tree(tree: &mut KGST<SeqElement, String>, output_path: String){
+    println!("Saving tree to {}.", &output_path);
+    std::fs::write(
+        output_path,
+        serde_json::to_string_pretty(tree).unwrap(),
+    ).unwrap();
+}
+
+fn load_tree(fname:&String) -> KGST<SeqElement, String>{
+    println!("Loading tree from {}", fname);
+    let json_str:String = fs::read_to_string(fname).unwrap();
+    let tree: KGST<SeqElement, String> = serde_json::from_str(&json_str).unwrap();
+    tree
+}
 
 fn search_fastq(tree:&mut KGST<SeqElement, String>, fastq_file:&str, max_depth:i32, result_file:&str){
     let reader = fastq::Reader::from_file(fastq_file).unwrap();
@@ -187,6 +198,10 @@ fn search_fastq(tree:&mut KGST<SeqElement, String>, fastq_file:&str, max_depth:i
     
 
     let reader = fastq::Reader::from_file(fastq_file).unwrap();
+
+    if std::path::Path::new(result_file).exists() {
+        fs::remove_file(result_file).unwrap();
+      }
 
     let mut file_ref = fs::OpenOptions::new().create_new(true).append(true).open(result_file).expect("Unable to open file");   
 
@@ -239,15 +254,41 @@ fn main() {
     let matches = Command::new("Metagenomic Classification")
         .version("1.0")
         .author("Sriram Vijendran <vijendran.sriram@gmail.com>")
-        .arg(arg!([file] "fasta file with reference sequences").required(true))
-        .arg(arg!([max_depth] "max depth of suffix tree").required(true).value_parser(clap::value_parser!(i32)))
-        .arg(arg!([search_file] "Fastq file").required(true))
-        .arg(arg!([result_file] "result file path").required(true))
+        .arg(arg!(
+            -b --build <FILE> "Builds tree from file"
+        )
+        .required(false)
+        )
+        .arg(arg!(
+            -m --max-depth <MAX_DEPTH> "Max depth of the tree"
+        )
+        .required(false)
+        )
+        .arg(arg!(
+            -s --search <READ_FILE>"Queries tree from read_file"
+        )
+        .required(false)
+        )
+        .arg(arg!(
+            -t --tree-file <TREE_FILE>"Queries tree"
+        )
+        .required(false)
+        )
+        .arg(arg!(
+            -o --out-file <OUT_FILE>"Output file"
+        )
+        .required(false)
+        )
         .get_matches();
 
-    println!("Building tree from {}", matches.get_one::<String>("file").expect("required").as_str());
-    let mut tree: KGST<SeqElement, String> = build_tree(matches.get_one::<String>("file").expect("required").as_str(), *matches.get_one::<i32>("max_depth").expect("required"));
+    // if let Some(fname) = matches.get_one::<String>("build") {
+    //         println!("Value for name: {}", fname);
+    //     }
+    
+    // let mut tree: KGST<SeqElement, String> = build_tree(matches.get_one::<String>("file").expect("required").as_str(), *matches.get_one::<i32>("max_depth").expect("required"));
 
-    println!("Searching {} for matches", matches.get_one::<String>("search_file").expect("required").as_str());
-    search_fastq(&mut tree, matches.get_one::<String>("search_file").expect("required").as_str(), *matches.get_one::<i32>("max_depth").expect("required"), matches.get_one::<String>("result_file").expect("required").as_str());
+    // save_tree(&mut tree, matches.get_one::<String>("save_file").expect("required").to_string());
+
+    // println!("Searching {} for matches", matches.get_one::<String>("search_file").expect("required").as_str());
+    // search_fastq(&mut tree, matches.get_one::<String>("search_file").expect("required").as_str(), *matches.get_one::<i32>("max_depth").expect("required"), matches.get_one::<String>("result_file").expect("required").as_str());
 }
