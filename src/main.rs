@@ -28,7 +28,6 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
     let mut tree: KGST<SeqElement, String> = KGST::new(SeqElement::E);
 
     let reader = fasta::Reader::from_file(file).unwrap();
-    let mut count:i32 = 0;
     
     for result in reader.records() {
 
@@ -63,7 +62,7 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
                 }
                 
             }
-            pb.println(format!("{}", result_data.id()));
+            pb.println(result_data.id());
             pb.inc(1);   
             // count+=1;
             // if(count%20==0){
@@ -74,7 +73,6 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
 
     let reader = fasta::Reader::from_file(file).unwrap();
     let mut strings:HashMap<String, Vec<SeqElement>> = HashMap::new();
-    let mut count:u32 = 0;
     
     for result in reader.records() {
 
@@ -108,11 +106,75 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
     tree
 }
 
+fn complement(q_seq: Vec<SeqElement>)->Vec<SeqElement>{
+    q_seq.iter()
+        .map(|x|{
+            match x{
+                SeqElement::T => SeqElement::A,
+                SeqElement::C => SeqElement::G,
+                SeqElement::A => SeqElement::T,
+                SeqElement::G => SeqElement::C,
+                _ => SeqElement::E,
+            }
+        })
+        .collect()
+}
 
-fn search_fastq(mut tree:KGST<SeqElement, String>, fastq_file:&str, max_depth:i32, result_file:&str){
+fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
+    let x: Vec<char> = read
+        .to_vec()
+        .iter()
+        .map(|x| *x as char)
+        .collect();
+    
+        if x.contains(&'N'){
+            return None;
+        }
+        else{
+            let seq: Vec<SeqElement> = x.iter()
+            .map(|x|{
+                match x{
+                    'A' => SeqElement::A,
+                    'G' => SeqElement::G,
+                    'T' => SeqElement::T,
+                    'C' => SeqElement::C,
+                    _ => SeqElement::E,
+                }
+            })
+            .collect();
+            return Some(seq);
+        }
+}
+
+fn query_tree(tree:&mut KGST<SeqElement, String>, q_seq:Vec<SeqElement>, max_depth:i32)->HashSet<(String, i32)>{
+    let mut match_set:HashSet<(String, i32)> = HashSet::new();
+    let string_len = q_seq.len();
+    if string_len>=max_depth.try_into().unwrap(){
+        let num_iter = string_len+1-(max_depth as usize);
+        for  depth in 0..num_iter{
+            let sub_seq = q_seq[depth..depth+(max_depth as usize)].to_vec();
+            let matches: Vec<(&String, &i32)> = tree.find(sub_seq);
+            if !matches.is_empty(){
+                for (hit_id, hit_idx) in matches.iter(){
+                    println!("{}", format!("{}:\t{}", hit_id, hit_idx));
+                }
+            }
+        }
+    }
+    match_set
+}
+
+// fn save_tree(tree: &mut KGST<SeqElement, String>, output_path: String){
+//     std::fs::write(
+//         output_path,
+//         serde_json::to_string_pretty(tree).unwrap(),
+//     ).unwrap();
+// }
+
+fn search_fastq(tree:&mut KGST<SeqElement, String>, fastq_file:&str, max_depth:i32, result_file:&str){
     let reader = fastq::Reader::from_file(fastq_file).unwrap();
 
-    let mut match_set:HashSet<String> = HashSet::new();
+    let mut match_set:HashSet<(String, i32)> = HashSet::new();
 
     let mut id_flag:bool = false;
 
@@ -125,11 +187,8 @@ fn search_fastq(mut tree:KGST<SeqElement, String>, fastq_file:&str, max_depth:i3
     
 
     let reader = fastq::Reader::from_file(fastq_file).unwrap();
-    let mut count:u32 = 0;
 
-    let mut fileRef = fs::OpenOptions::new().create_new(true).append(true).open(result_file).expect("Unable to open file");   
-
-
+    let mut file_ref = fs::OpenOptions::new().create_new(true).append(true).open(result_file).expect("Unable to open file");   
 
     for result in reader.records() {
 
@@ -155,37 +214,18 @@ fn search_fastq(mut tree:KGST<SeqElement, String>, fastq_file:&str, max_depth:i3
                 }
             })
             .collect();
-            let string_len = seq.len();
-            if string_len>=max_depth.try_into().unwrap(){
-                let num_iter = string_len+1-(max_depth as usize);
-                for (n, depth) in (0..num_iter).enumerate(){
-                    let sub_seq = seq[depth..depth+(max_depth as usize)].to_vec();
-                    let matches: Vec<(&String, &i32)> = tree.find(sub_seq);
-                    if !matches.is_empty(){
-                        if !id_flag{
-                            id_flag = !id_flag;
-                            pb.println(format!("Positive ID"));
-                        }
-                        for (hit_ID, idx) in matches.iter(){
-                            let mut ID:Vec<&str> = hit_ID.split('_').collect();
-                            if !match_set.contains(&format!("{:?}", ID[0])){
-                                match_set.insert(format!("{:?}", ID[0]));
-                                // fileRef.write_all(format!("{:?}\n", ID[0]).as_bytes()).expect("write failed");
-
-                                // fs::write(result_file, format!("{:?}", ID[0])).expect("Unable to write file");
-                            }
-                            
-                        }
-                        
-                    }
+            let mut matches = query_tree(tree, seq, max_depth);
+            if !matches.is_empty(){
+                if !id_flag{
+                    id_flag = !id_flag;
+                    pb.println("Positive ID");
                 }
-                for id in match_set.iter(){
-                    let mut out_string:String = format!("{}\t{}\n", result_data.id(), id);
-                    fileRef.write_all(out_string.as_bytes()).expect("write failed");
-                }
-                
+                match_set.extend(matches.clone());
             }
-             
+            for (id, idx) in matches.iter(){
+                let out_string:String = format!("{}\t{}\t{}\n", result_data.id(), id, idx);
+                file_ref.write_all(out_string.as_bytes()).expect("write failed");
+            }
         }
         pb.inc(1);
         
@@ -209,6 +249,5 @@ fn main() {
     let mut tree: KGST<SeqElement, String> = build_tree(matches.get_one::<String>("file").expect("required").as_str(), *matches.get_one::<i32>("max_depth").expect("required"));
 
     println!("Searching {} for matches", matches.get_one::<String>("search_file").expect("required").as_str());
-    search_fastq(tree, matches.get_one::<String>("search_file").expect("required").as_str(), *matches.get_one::<i32>("max_depth").expect("required"), matches.get_one::<String>("result_file").expect("required").as_str());
-
+    search_fastq(&mut tree, matches.get_one::<String>("search_file").expect("required").as_str(), *matches.get_one::<i32>("max_depth").expect("required"), matches.get_one::<String>("result_file").expect("required").as_str());
 }
