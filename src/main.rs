@@ -30,7 +30,7 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
 
     let reader = fasta::Reader::from_file(file).unwrap();
 
-    let mut count = 20;
+    // let mut count = 20;
     
     for result in reader.records() {
 
@@ -67,10 +67,10 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
             }
             // pb.println(result_data.id());
             pb.inc(1);   
-            count+=1;
-            if(count%20==0){
-                break;
-            }
+            // count+=1;
+            // if(count%20==0){
+            //     break;
+            // }
         }
     }
 
@@ -149,17 +149,20 @@ fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
         }
 }
 
-fn query_tree(tree:&mut KGST<SeqElement, String>, q_seq:Vec<SeqElement>, max_depth:i32)->HashSet<(String, i32)>{
-    let mut match_set:HashSet<(String, i32)> = HashSet::new();
+fn query_tree(tree:&mut KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, max_depth:i32)->HashSet<(String, String, usize)>{
+    let mut match_set:HashSet<(String, String, usize)> = HashSet::new();
     let string_len = q_seq.len();
     if string_len>=max_depth.try_into().unwrap(){
         let num_iter = string_len+1-(max_depth as usize);
-        for  depth in 0..num_iter{
+        for (n,depth) in (0..num_iter).enumerate(){
             let sub_seq = q_seq[depth..depth+(max_depth as usize)].to_vec();
             let matches: Vec<(&String, &i32)> = tree.find(sub_seq);
             if !matches.is_empty(){
                 for (hit_id, hit_idx) in matches.iter(){
-                    match_set.insert(((**hit_id).clone(), **hit_idx));
+                    let hit_pos: usize = hit_id.split('_').collect::<Vec<&str>>()[1].parse().unwrap();
+                    if &n<=&hit_pos{
+                        match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), hit_pos-n));
+                    }
                 }
             }
         }
@@ -186,7 +189,7 @@ fn load_tree(fname:&String) -> KGST<SeqElement, String>{
 fn search_fastq(tree:&mut KGST<SeqElement, String>, fastq_file:&str, max_depth:i32, result_file:&str){
     let reader = fastq::Reader::from_file(fastq_file).unwrap();
 
-    let mut match_set:HashSet<(String, i32)> = HashSet::new();
+    let mut match_set:HashSet<(String, String, usize)> = HashSet::new();
 
     let mut id_flag:bool = false;
 
@@ -206,11 +209,17 @@ fn search_fastq(tree:&mut KGST<SeqElement, String>, fastq_file:&str, max_depth:i
 
     let mut file_ref = fs::OpenOptions::new().create_new(true).append(true).open(result_file).expect("Unable to open file");   
 
-    for result in reader.records() {
+    for read in reader.records() {
 
-        let result_data = result.unwrap();
+        let read_data = read.unwrap();
+        
+        let read_id: String = read_data.id().to_string();
+        let read_num: i32 = read_data.desc().unwrap().split(' ').collect::<Vec<&str>>()[0].parse().unwrap();
+        let read_len: i32 = read_data.desc().unwrap().split(' ').collect::<Vec<&str>>()[1].split('=').collect::<Vec<&str>>()[1].parse().unwrap();
+        let read_qual: Vec<u8> = read_data.qual().to_vec();
+        
 
-        let x: Vec<char> = result_data.seq()
+        let x: Vec<char> = read_data.seq()
         .to_vec()
         .iter()
         .map(|x| *x as char)
@@ -230,7 +239,7 @@ fn search_fastq(tree:&mut KGST<SeqElement, String>, fastq_file:&str, max_depth:i
                 }
             })
             .collect();
-            let mut matches = query_tree(tree, seq, max_depth);
+            let mut matches = query_tree(tree, seq, read_id, max_depth);
             if !matches.is_empty(){
                 if !id_flag{
                     id_flag = !id_flag;
@@ -238,8 +247,8 @@ fn search_fastq(tree:&mut KGST<SeqElement, String>, fastq_file:&str, max_depth:i
                 }
                 match_set.extend(matches.clone());
             }
-            for (id, idx) in matches.iter(){
-                let out_string:String = format!("{}\t{}\t{}\n", result_data.id(), id, idx);
+            for (seq_id, read_id, seq_idx) in matches.iter(){
+                let out_string:String = format!("{}\t{}\t{}\n", seq_id, read_id, seq_idx);
                 file_ref.write_all(out_string.as_bytes()).expect("write failed");
             }
         }
