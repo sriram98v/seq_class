@@ -173,6 +173,7 @@ fn save_tree(tree: &mut KGST<SeqElement, String>, output_path: String){
         output_path,
         serde_json::to_string_pretty(tree).unwrap(),
     ).unwrap();
+    println!("Saved");
 }
 
 fn load_tree(fname:&String) -> KGST<SeqElement, String>{
@@ -249,42 +250,57 @@ fn search_fastq(tree:&mut KGST<SeqElement, String>, fastq_file:&str, max_depth:i
 }
 
 fn main() {
-    std::env::set_var("RUST_BACKTRACE", "1");
+    // std::env::set_var("RUST_BACKTRACE", "1");
 
     let matches = Command::new("Metagenomic Classification")
         .version("1.0")
         .author("Sriram Vijendran <vijendran.sriram@gmail.com>")
-        .arg(arg!(
-            -b --build <FILE> "Builds tree from file"
+        .subcommand(Command::new("build")
+            .about("Build suffix tree index from reference fasta file")
+            .arg(arg!(-s --source <SRC_FILE> "Source file with sequences(fasta)")
+                .required(true)
+                )
+            .arg(arg!(-m --max <MAX_DEPTH> "Max depth of the tree")
+                .required(true)
+                .value_parser(clap::value_parser!(i32))
+                )
+            .arg(arg!(-o --out <SAVE_FILE> "save file")
+                .required(true)
+                )
         )
-        .required(false)
-        )
-        .arg(arg!(
-            -m --max-depth <MAX_DEPTH> "Max depth of the tree"
-        )
-        .required(false)
-        )
-        .arg(arg!(
-            -s --search <READ_FILE>"Queries tree from read_file"
-        )
-        .required(false)
-        )
-        .arg(arg!(
-            -t --tree-file <TREE_FILE>"Queries tree"
-        )
-        .required(false)
-        )
-        .arg(arg!(
-            -o --out-file <OUT_FILE>"Output file"
-        )
-        .required(false)
-        )
+        .subcommand(Command::new("query")
+            .about("Classify reads from fastq file")
+            .arg(arg!(-r --reads <READS>"Queries tree from read_file")
+                .required(true)
+                )
+            .arg(arg!(-m --max <MAX_DEPTH> "Max depth of the tree")
+                .required(true)
+                .value_parser(clap::value_parser!(i32))
+                )
+            .arg(arg!(-t --tree <TREE_FILE>"Queries tree")
+                .required(true)
+                )
+            .arg(arg!(-o --out <OUT_FILE>"Output file")
+                .required(true)
+                )
+            )
+        .about("Metagenomic classifier using Suffix trees")
         .get_matches();
-
-    // if let Some(fname) = matches.get_one::<String>("build") {
-    //         println!("Value for name: {}", fname);
-    //     }
     
+    match matches.subcommand(){
+        Some(("build",  sub_m)) => {
+            let mut tree: KGST<SeqElement, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<i32>("max").expect("required"));
+            save_tree(&mut tree, sub_m.get_one::<String>("out").expect("required").to_string());
+        },
+        Some(("query",  sub_m)) => {
+            let mut tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
+            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), *sub_m.get_one::<i32>("max").expect("required"), sub_m.get_one::<String>("out").expect("required").as_str());
+
+        },
+        _ => {
+            println!("Either build a tree or query an existing tree");
+        }
+    }
     // let mut tree: KGST<SeqElement, String> = build_tree(matches.get_one::<String>("file").expect("required").as_str(), *matches.get_one::<i32>("max_depth").expect("required"));
 
     // save_tree(&mut tree, matches.get_one::<String>("save_file").expect("required").to_string());
