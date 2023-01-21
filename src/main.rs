@@ -149,6 +149,15 @@ fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
         }
 }
 
+fn hamming_distance(ref_seq: Vec<SeqElement>, read_seq: Vec<SeqElement>)->usize{
+    let mut count:usize = 0;
+    let it = ref_seq.iter().zip(read_seq.iter());
+    for (x,y) in it{
+        if x!=y{count +=1;}
+    }
+    count
+}
+
 fn query_tree(tree:&mut KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, max_depth:i32)->HashSet<(String, String, usize)>{
     let mut match_set:HashSet<(String, String, usize)> = HashSet::new();
     let string_len = q_seq.len();
@@ -161,6 +170,8 @@ fn query_tree(tree:&mut KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_i
                 for (hit_id, hit_idx) in matches.iter(){
                     let hit_pos: usize = hit_id.split('_').collect::<Vec<&str>>()[1].parse().unwrap();
                     if &n<=&hit_pos{
+                        // let ref_slice:&Vec<SeqElement> = tree.get_string(&(**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
+                        // let dist:usize = hamming_distance
                         match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), hit_pos-n));
                     }
                 }
