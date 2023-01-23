@@ -30,7 +30,7 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
 
     let reader = fasta::Reader::from_file(file).unwrap();
 
-    let mut count = 20;
+    // let mut count = 20;
     
     for result in reader.records() {
 
@@ -67,10 +67,10 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
             }
             // pb.println(result_data.id());
             pb.inc(1);   
-            count+=1;
-            if(count%20==0){
-                break;
-            }
+            // count+=1;
+            // if(count%20==0){
+            //     break;
+            // }
         }
     }
 
