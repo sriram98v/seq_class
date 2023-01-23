@@ -159,9 +159,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "clap"
-version = "4.1.1"
+version = "4.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ec7a4128863c188deefe750ac1d1dfe66c236909f845af04beed823638dc1b2"
+checksum = "0e638668a62aced2c9fb72b5135a33b4a500485ccf2a0e402e09aa04ab2fc115"
 dependencies = [
  "bitflags",
  "clap_derive",
@@ -323,7 +323,7 @@ dependencies = [
 [[package]]
 name = "generalized_suffix_tree"
 version = "0.1.0"
-source = "git+https://github.com/sriram98v/generalized_suffix_tree#240b187b337db60905e51921649ff9b15b54b605"
+source = "git+https://github.com/sriram98v/generalized_suffix_tree#b7e255e738789b4150aecdb8dc81663fecec7ae9"
 dependencies = [
  "serde",
  "serde_json",
