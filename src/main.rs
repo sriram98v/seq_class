@@ -160,7 +160,8 @@ fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->usiz
 
 fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, max_depth:i32)->HashSet<(String, String, usize)>{
     let mut match_set:HashSet<(String, String, usize)> = HashSet::new();
-    let string_len = q_seq.len();
+    let string_len: usize = q_seq.len();
+    let mismatch_lim: f32 = q_seq.len() as f32 * 0.2;
     if string_len>=max_depth.try_into().unwrap(){
         let num_iter = string_len+1-(max_depth as usize);
         for (n,depth) in (0..num_iter).enumerate(){
@@ -176,7 +177,12 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
                         let ref_sice: Vec<SeqElement> = ref_seq[hit_pos..hit_pos+string_len].to_vec();
                         // println!("{}", &(**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
                         let dist:usize = hamming_distance(&ref_sice, &q_seq);
-                        match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), dist));
+                        if dist as f32<=mismatch_lim{
+                            match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), dist));
+                        }
+                        else {
+                            // println!("mismatch_lim: {}\tdist: {}", mismatch_lim, dist);
+                        }
                     }
                 }
             }
@@ -265,7 +271,6 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, max_depth:i32, 
             }
             for (seq_id, read_id, seq_idx) in matches.iter(){
                 let out_string:String = format!("{}\t{}\t{}\n", seq_id, read_id, seq_idx);
-                pb.println("wrote output");
                 file_ref.write_all(out_string.as_bytes()).expect("write failed");
             }
         }
