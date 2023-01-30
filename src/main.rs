@@ -5,8 +5,9 @@ use bio::io::{fasta,  fastq};
 use generalized_suffix_tree::suffix_tree::KGST;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Serialize, Deserialize};
-use std::{fs, string};
+use std::fs;
 use std::io::Write;
+
 
 
 #[derive(Eq, Hash, PartialEq, Copy, Clone, Debug, Serialize, Deserialize)]
@@ -149,19 +150,46 @@ fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
         }
 }
 
-fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->usize{
+fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->(usize, Vec<bool>){
     let mut count:usize = 0;
+    let mut match_vec:Vec<bool> = Vec::new();
     let it = ref_seq.iter().zip(read_seq.iter());
     for (x,y) in it{
-        if x!=y{count +=1;}
+        if x!=y{
+            count +=1;
+            match_vec.push(false);
+        }
+        else{
+            match_vec.push(true);
+        }
     }
-    count
+    (count, match_vec)
+}
+
+fn score(match_seq: Vec<bool>) -> usize{
+    let mut total: usize = 0;
+    let mut count:usize = 0;
+    for el in match_seq.iter(){
+        match el{
+            &true => count +=1,
+            &false => {
+                if count>=15{
+                    total += (count-15).pow(2);
+                }
+                count = 0;
+            }
+        }
+    }
+    if count>=15{
+        total += (count-15).pow(2);
+    }
+    total
 }
 
 fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, max_depth:i32)->HashSet<(String, String, usize)>{
     let mut match_set:HashSet<(String, String, usize)> = HashSet::new();
     let string_len: usize = q_seq.len();
-    let mismatch_lim: f32 = q_seq.len() as f32 * 0.2;
+    let mismatch_lim: usize = (q_seq.len() as f32 * 0.15).floor() as usize;
     if string_len>=max_depth.try_into().unwrap(){
         let num_iter = string_len+1-(max_depth as usize);
         for (n,depth) in (0..num_iter).enumerate(){
@@ -176,12 +204,12 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
                     if &n<=&hit_pos && (&hit_pos+&string_len)<=ref_seq.len(){
                         let ref_sice: Vec<SeqElement> = ref_seq[hit_pos..hit_pos+string_len].to_vec();
                         // println!("{}", &(**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
-                        let dist:usize = hamming_distance(&ref_sice, &q_seq);
-                        if dist as f32<=mismatch_lim{
-                            match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), dist));
+                        let matching:(usize, Vec<bool>) = hamming_distance(&ref_sice, &q_seq);
+                        if matching.0<=mismatch_lim{
+                            match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), score(matching.1)));
                         }
                         else {
-                            // println!("mismatch_lim: {}\tdist: {}", mismatch_lim, dist);
+                            // println!("read_len: {}\tmismatch_lim: {}\tdist: {}", string_len, mismatch_lim, dist);
                         }
                     }
                 }
@@ -229,7 +257,9 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, max_depth:i32, 
         fs::remove_file(result_file).unwrap();
       }
 
-    let mut file_ref = fs::OpenOptions::new().create_new(true).append(true).open(result_file).expect("Unable to open file");   
+    let mut file_ref = fs::OpenOptions::new().create_new(true).append(true).open(result_file).expect("Unable to open file");
+    let result_header:String = "readID\tseqID\tscore\tqueryLength\tnumMatches\n".to_string();
+    file_ref.write_all(result_header.as_bytes()).expect("write failed");
 
     for read in reader.records() {
 
