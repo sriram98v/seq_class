@@ -195,7 +195,7 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
         for (n,depth) in (0..num_iter).enumerate(){
             let sub_seq = q_seq[depth..depth+(max_depth as usize)].to_vec();
             // println!("{:?}", sub_seq);
-            let matches: Vec<(&String, &i32)> = tree.find(sub_seq);
+            let matches: Vec<(&String, &u32)> = tree.find(sub_seq);
             // println!("{:?}", matches);
             if !matches.is_empty(){
                 for (hit_id, hit_idx) in matches.iter(){
