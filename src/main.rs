@@ -15,7 +15,7 @@ enum SeqElement {
     A, G, T, C, E
 }
 
-fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
+fn build_tree(file:&str, max_depth:i32, num_seq: u32)->KGST<SeqElement, String>{
     println!("Building tree from {}", file);
     let reader = fasta::Reader::from_file(file).unwrap();
 
@@ -69,7 +69,7 @@ fn build_tree(file:&str, max_depth:i32)->KGST<SeqElement, String>{
             // pb.println(result_data.id());
             pb.inc(1);   
             // count+=1;
-            // if(count%20==0){
+            // if(count==num_seq){
             //     break;
             // }
         }
@@ -199,6 +199,7 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
             // println!("{:?}", matches);
             if !matches.is_empty(){
                 for (hit_id, hit_idx) in matches.iter(){
+                    // println!("{:?}", hit_id);
                     let hit_pos: usize = hit_id.split('_').collect::<Vec<&str>>()[1].parse().unwrap();
                     let ref_seq:&Vec<SeqElement> = tree.get_string(&(**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
                     if &n<=&hit_pos && (&hit_pos+&string_len)<=ref_seq.len(){
@@ -328,6 +329,10 @@ fn main() {
             .arg(arg!(-o --out <SAVE_FILE> "save file")
                 .required(true)
                 )
+            .arg(arg!(-n --num <NUM_SEQ> "Number of seq. (0==all)")
+                .required(true)
+                .value_parser(clap::value_parser!(u32))
+                )
         )
         .subcommand(Command::new("query")
             .about("Classify reads from fastq file")
@@ -350,7 +355,7 @@ fn main() {
     
     match matches.subcommand(){
         Some(("build",  sub_m)) => {
-            let mut tree: KGST<SeqElement, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<i32>("max").expect("required"));
+            let mut tree: KGST<SeqElement, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<i32>("max").expect("required"), *sub_m.get_one::<u32>("num").expect("required"));
             save_tree(&mut tree, sub_m.get_one::<String>("out").expect("required").to_string());
         },
         Some(("query",  sub_m)) => {
