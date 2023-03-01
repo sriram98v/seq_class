@@ -5,7 +5,7 @@ use bio::io::{fasta,  fastq};
 use generalized_suffix_tree::suffix_tree::KGST;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Serialize, Deserialize};
-use std::fs;
+use std::{fs, string};
 use std::io::Write;
 
 
@@ -24,27 +24,25 @@ fn build_tree(file:&str, max_depth:i32, num_seq: u32)->KGST<SeqElement, String>{
     let pb = ProgressBar::new(total_size as u64);
     pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
         .unwrap()
-        // .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
         .progress_chars("#>-"));
     
     let mut tree: KGST<SeqElement, String> = KGST::new(SeqElement::E);
 
     let reader = fasta::Reader::from_file(file).unwrap();
 
-    // let mut count = 20;
+    let mut count = 0;
     
     for result in reader.records() {
 
         let result_data = result.unwrap();
-
+        
         let x: Vec<char> = result_data.seq()
         .to_vec()
         .iter()
         .map(|x| *x as char)
         .collect();
         
-        if x.contains(&'N'){
-        }
+        if x.contains(&'N'){}
         else{
             let seq: Vec<SeqElement> = x.iter()
             .map(|x|{
@@ -66,17 +64,18 @@ fn build_tree(file:&str, max_depth:i32, num_seq: u32)->KGST<SeqElement, String>{
                 }
                 
             }
-            // pb.println(result_data.id());
             pb.inc(1);   
-            // count+=1;
-            // if(count==num_seq){
-            //     break;
-            // }
+            count+=1;
+            if(count==num_seq){
+                break;
+            }
         }
     }
 
     let reader = fasta::Reader::from_file(file).unwrap();
     let mut strings:HashMap<String, Vec<SeqElement>> = HashMap::new();
+
+    let mut count = 0;
     
     for result in reader.records() {
 
@@ -104,6 +103,10 @@ fn build_tree(file:&str, max_depth:i32, num_seq: u32)->KGST<SeqElement, String>{
             .collect();
             
             strings.insert(format!("{}", result_data.id()), seq);
+            count+=1;
+            if(count==num_seq){
+                break;
+            }
         }
     }
     tree.set_strings(strings);
