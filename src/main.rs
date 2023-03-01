@@ -29,13 +29,14 @@ fn build_tree(file:&str, max_depth:i32, num_seq: u32)->KGST<SeqElement, String>{
     let mut tree: KGST<SeqElement, String> = KGST::new(SeqElement::E);
 
     let reader = fasta::Reader::from_file(file).unwrap();
+    let mut strings:HashMap<String, Vec<SeqElement>> = HashMap::new();
 
     let mut count = 0;
     
     for result in reader.records() {
 
         let result_data = result.unwrap();
-        
+
         let x: Vec<char> = result_data.seq()
         .to_vec()
         .iter()
@@ -64,6 +65,7 @@ fn build_tree(file:&str, max_depth:i32, num_seq: u32)->KGST<SeqElement, String>{
                 }
                 
             }
+            strings.insert(format!("{}", result_data.id()), seq);
             pb.inc(1);   
             count+=1;
             if(count==num_seq){
@@ -71,44 +73,7 @@ fn build_tree(file:&str, max_depth:i32, num_seq: u32)->KGST<SeqElement, String>{
             }
         }
     }
-
-    let reader = fasta::Reader::from_file(file).unwrap();
-    let mut strings:HashMap<String, Vec<SeqElement>> = HashMap::new();
-
-    let mut count = 0;
     
-    for result in reader.records() {
-
-        let result_data = result.unwrap();
-
-        let x: Vec<char> = result_data.seq()
-        .to_vec()
-        .iter()
-        .map(|x| *x as char)
-        .collect();
-        
-        if x.contains(&'N'){
-        }
-        else{
-            let seq: Vec<SeqElement> = x.iter()
-            .map(|x|{
-                match x{
-                    'A' => SeqElement::A,
-                    'G' => SeqElement::G,
-                    'T' => SeqElement::T,
-                    'C' => SeqElement::C,
-                    _ => SeqElement::E,
-                }
-            })
-            .collect();
-            
-            strings.insert(format!("{}", result_data.id()), seq);
-            count+=1;
-            if(count==num_seq){
-                break;
-            }
-        }
-    }
     tree.set_strings(strings);
     tree
 }
