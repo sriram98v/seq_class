@@ -5,7 +5,7 @@ use bio::io::{fasta,  fastq};
 use generalized_suffix_tree::suffix_tree::KGST;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Serialize, Deserialize};
-use std::{fs, string};
+use std::{fs, string, fmt};
 use std::io::Write;
 
 
@@ -14,6 +14,19 @@ use std::io::Write;
 enum SeqElement {
     A, G, T, C, E
 }
+
+impl fmt::Display for SeqElement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SeqElement::A => write!(f, "A"),
+            SeqElement::G => write!(f, "G"),
+            SeqElement::T => write!(f, "T"),
+            SeqElement::C => write!(f, "C"),
+            SeqElement::E => write!(f, "$"),
+        }
+    }
+}
+
 
 fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String>{
     println!("Building tree from {}", file);
@@ -118,7 +131,7 @@ fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
         }
 }
 
-fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->(usize, Vec<bool>){
+fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>, mismatch_lim: usize)->Option<(usize, Vec<bool>)>{
     let mut count:usize = 0;
     let mut match_vec:Vec<bool> = Vec::new();
     let it = ref_seq.iter().zip(read_seq.iter());
@@ -130,8 +143,11 @@ fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->(usi
         else{
             match_vec.push(true);
         }
+        if count>=mismatch_lim{
+            return None;
+        }
     }
-    (count, match_vec)
+    Some((count, match_vec))
 }
 
 fn score(match_seq: Vec<bool>) -> usize{
@@ -173,13 +189,20 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
                     if &depth<=&hit_pos && (&string_len-&depth)<=(&ref_seq.len()-&hit_pos){
                         let ref_sice: Vec<SeqElement> = ref_seq[hit_pos-depth..hit_pos-depth+string_len].to_vec();
                         // println!("{}", &(**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
-                        let matching:(usize, Vec<bool>) = hamming_distance(&ref_sice, &q_seq);
-                        if matching.0<=mismatch_lim{
-                            match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), score(matching.1)));
+                        // match_set.insert((ref_sice.clone(), q_seq.clone(), mismatch_lim));
+                        let matching:Option<(usize, Vec<bool>)> = hamming_distance(&ref_sice, &q_seq, mismatch_lim);
+                        match matching {
+                            None => {},
+                            Some(i) => {
+                                match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), i.0));
+                            },
                         }
-                        else {
-                            // println!("read_len: {}\tmismatch_lim: {}\tdist: {}", string_len, mismatch_lim, dist);
-                        }
+                        // if matching<=mismatch_lim{
+                        //     match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), matching));
+                        // }
+                        // else {
+                        //     // println!("read_len: {}\tmismatch_lim: {}\tdist: {}", string_len, mismatch_lim, dist);
+                        // }
                     }
                 }
             }
