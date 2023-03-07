@@ -5,7 +5,7 @@ use bio::io::{fasta,  fastq};
 use generalized_suffix_tree::suffix_tree::KGST;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Serialize, Deserialize};
-use std::{fs, string, fmt};
+use std::{fs, fmt};
 use std::io::Write;
 
 
@@ -143,7 +143,7 @@ fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>, misma
         else{
             match_vec.push(true);
         }
-        if count>=mismatch_lim{
+        if count>mismatch_lim{
             return None;
         }
     }
@@ -170,10 +170,10 @@ fn score(match_seq: Vec<bool>) -> usize{
     total
 }
 
-fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, max_depth:usize)->HashSet<(String, String, usize)>{
+fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, max_depth:usize, percent_match: f32)->HashSet<(String, String, usize)>{
     let mut match_set:HashSet<(String, String, usize)> = HashSet::new();
     let string_len: usize = q_seq.len();
-    let mismatch_lim: usize = (q_seq.len() as f32 * 0.15).floor() as usize;
+    let mismatch_lim: usize = (q_seq.len() as f32 * percent_match).floor() as usize;
     if string_len>=max_depth.try_into().unwrap(){
         let num_iter = string_len+1-(max_depth);
         for (n,depth) in (0..num_iter).enumerate(){
@@ -187,6 +187,7 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
                     let hit_pos: usize = hit_id.split("___").collect::<Vec<&str>>().last().unwrap().parse().unwrap();   //this is k on the reference. depth is l on the read. both l-1<=k-1 and m-l+1 <= n-k+1
                     let ref_seq:&Vec<SeqElement> = tree.get_string(&(**hit_id).split("___").collect::<Vec<&str>>()[0].to_string());
                     if &depth<=&hit_pos && (&string_len-&depth)<=(&ref_seq.len()-&hit_pos){
+                        // println!("{:?}", (**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
                         let ref_sice: Vec<SeqElement> = ref_seq[hit_pos-depth..hit_pos-depth+string_len].to_vec();
                         // println!("{}", &(**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
                         // match_set.insert((ref_sice.clone(), q_seq.clone(), mismatch_lim));
@@ -194,6 +195,7 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
                         match matching {
                             None => {},
                             Some(i) => {
+                                // println!("{:?}", (**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
                                 match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), i.0));
                             },
                         }
@@ -227,7 +229,7 @@ fn load_tree(fname:&String) -> KGST<SeqElement, String>{
     tree
 }
 
-fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, max_depth:usize, result_file:&str){
+fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, max_depth:usize, result_file:&str, percent_match:f32){
     println!("Classifying read file: {}", &fastq_file);
     let reader = fastq::Reader::from_file(fastq_file).unwrap();
 
@@ -283,7 +285,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, max_depth:usize
                 }
             })
             .collect();
-            let mut matches = query_tree(tree, seq, read_id, max_depth);
+            let mut matches = query_tree(tree, seq, read_id, max_depth, percent_match);
             if !matches.is_empty(){
                 if !id_flag{
                     id_flag = !id_flag;
@@ -334,6 +336,9 @@ fn main() {
                 .required(true)
                 .value_parser(clap::value_parser!(usize))
                 )
+            .arg(arg!(-p --percent_match <PERCENT_MATCH>"Percent match to reference sequences")
+                .required(true)
+                )
             .arg(arg!(-t --tree <TREE_FILE>"Queries tree")
                 .required(true)
                 )
@@ -354,6 +359,9 @@ fn main() {
                 .required(true)
                 .value_parser(clap::value_parser!(u32))
                 )
+            .arg(arg!(-p --percent_match <PERCENT_MATCH>"Percent match to reference sequences")
+                .required(true)
+                )
             .arg(arg!(-r --reads <READS>"Queries tree from read_file")
                 .required(true)
                 )
@@ -371,12 +379,15 @@ fn main() {
         },
         Some(("query",  sub_m)) => {
             let mut tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
-            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), sub_m.get_one::<String>("out").expect("required").as_str());
+            let percent_match: f32 = (*sub_m.get_one::<usize>("max").expect("required") as f32)/100.0;
+            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), 
+                    sub_m.get_one::<String>("out").expect("required").as_str(), percent_match);
 
         },
         Some(("quick_build",  sub_m)) => {
             let mut tree: KGST<SeqElement, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), *sub_m.get_one::<u32>("num").expect("required"));
-            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), sub_m.get_one::<String>("out").expect("required").as_str());
+            let percent_match: f32 = (*sub_m.get_one::<usize>("max").expect("required") as f32)/100.0;
+            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), sub_m.get_one::<String>("out").expect("required").as_str(), percent_match);
         },
         _ => {
             println!("Either build a tree or query an existing tree");
