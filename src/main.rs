@@ -157,7 +157,7 @@ fn score(match_seq: Vec<bool>) -> usize{
         match el{
             &true => count +=1,
             &false => {
-                if count>=15{
+                if count>=22{
                     total += (count-15).pow(2);
                 }
                 count = 0;
@@ -170,14 +170,15 @@ fn score(match_seq: Vec<bool>) -> usize{
     total
 }
 
-fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, max_depth:usize, percent_match: f32)->HashSet<(String, String, usize)>{
+fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, percent_match: f32)->HashSet<(String, String, usize)>{
     let mut match_set:HashSet<(String, String, usize)> = HashSet::new();
     let string_len: usize = q_seq.len();
     let mismatch_lim: usize = (q_seq.len() as f32 * percent_match).floor() as usize;
-    if string_len>=max_depth.try_into().unwrap(){
-        let num_iter = string_len+1-(max_depth);
+    let chunk_size: usize = string_len/(mismatch_lim+1);
+    if string_len>=chunk_size{
+        let num_iter = string_len+1-(chunk_size);
         for (n,depth) in (0..num_iter).enumerate(){
-            let sub_seq = q_seq[depth..depth+(max_depth)].to_vec();
+            let sub_seq = q_seq[depth..depth+(chunk_size)].to_vec();
             // println!("{:?}", sub_seq);
             let matches: Vec<(&String, &u32)> = tree.find(sub_seq);
             // println!("{:?}", matches);
@@ -196,7 +197,7 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
                             None => {},
                             Some(i) => {
                                 // println!("{:?}", (**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
-                                match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), i.0));
+                                match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), score(i.1)));
                             },
                         }
                         // if matching<=mismatch_lim{
@@ -229,7 +230,7 @@ fn load_tree(fname:&String) -> KGST<SeqElement, String>{
     tree
 }
 
-fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, max_depth:usize, result_file:&str, percent_match:f32){
+fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&str, percent_match:f32){
     println!("Classifying read file: {}", &fastq_file);
     let reader = fastq::Reader::from_file(fastq_file).unwrap();
 
@@ -285,7 +286,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, max_depth:usize
                 }
             })
             .collect();
-            let mut matches = query_tree(tree, seq, read_id, max_depth, percent_match);
+            let matches = query_tree(tree, seq, read_id, percent_match);
             if !matches.is_empty(){
                 if !id_flag{
                     id_flag = !id_flag;
@@ -332,12 +333,9 @@ fn main() {
             .arg(arg!(-r --reads <READS>"Queries tree from read_file")
                 .required(true)
                 )
-            .arg(arg!(-m --max <MAX_DEPTH> "Max depth of the tree")
+            .arg(arg!(-p --percent_match <PERCENT_MATCH>"Percent mismatch to reference sequences")
                 .required(true)
                 .value_parser(clap::value_parser!(usize))
-                )
-            .arg(arg!(-p --percent_match <PERCENT_MATCH>"Percent match to reference sequences")
-                .required(true)
                 )
             .arg(arg!(-t --tree <TREE_FILE>"Queries tree")
                 .required(true)
@@ -351,16 +349,13 @@ fn main() {
             .arg(arg!(-s --source <SRC_FILE> "Source file with sequences(fasta)")
                 .required(true)
                 )
-            .arg(arg!(-m --max <MAX_DEPTH> "Max depth of the tree")
-                .required(true)
-                .value_parser(clap::value_parser!(usize))
-                )
             .arg(arg!(-n --num <NUM_SEQ> "Number of seq. (0==all)")
                 .required(true)
                 .value_parser(clap::value_parser!(u32))
                 )
-            .arg(arg!(-p --percent_match <PERCENT_MATCH>"Percent match to reference sequences")
+            .arg(arg!(-p --percent_match <PERCENT_MATCH>"Percent mismatch to reference sequences")
                 .required(true)
+                .value_parser(clap::value_parser!(usize))
                 )
             .arg(arg!(-r --reads <READS>"Queries tree from read_file")
                 .required(true)
@@ -379,24 +374,17 @@ fn main() {
         },
         Some(("query",  sub_m)) => {
             let mut tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
-            let percent_match: f32 = (*sub_m.get_one::<usize>("max").expect("required") as f32)/100.0;
-            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), 
-                    sub_m.get_one::<String>("out").expect("required").as_str(), percent_match);
+            let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
+            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), sub_m.get_one::<String>("out").expect("required").as_str(), percent_mismatch);
 
         },
         Some(("quick_build",  sub_m)) => {
             let mut tree: KGST<SeqElement, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), *sub_m.get_one::<u32>("num").expect("required"));
-            let percent_match: f32 = (*sub_m.get_one::<usize>("max").expect("required") as f32)/100.0;
-            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), sub_m.get_one::<String>("out").expect("required").as_str(), percent_match);
+            let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
+            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), sub_m.get_one::<String>("out").expect("required").as_str(), percent_mismatch);
         },
         _ => {
-            println!("Either build a tree or query an existing tree");
+            println!("Either build a tree or query an existing tree. Refer help page (-h flag)");
         }
     }
-    // let mut tree: KGST<SeqElement, String> = build_tree(matches.get_one::<String>("file").expect("required").as_str(), *matches.get_one::<usize>("max_depth").expect("required"));
-
-    // save_tree(&mut tree, matches.get_one::<String>("save_file").expect("required").to_string());
-
-    // println!("Searching {} for matches", matches.get_one::<String>("search_file").expect("required").as_str());
-    // search_fastq(&mut tree, matches.get_one::<String>("search_file").expect("required").as_str(), *matches.get_one::<usize>("max_depth").expect("required"), matches.get_one::<String>("result_file").expect("required").as_str());
 }
