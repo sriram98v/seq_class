@@ -221,7 +221,7 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
                             None => {},
                             Some(i) => {
                                 // println!("{:?}", (**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
-                                match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), score(i.1), hit_pos));
+                                match_set.insert(((**hit_id).split("___").collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), score(i.1), hit_pos));
                             },
                         }
                         // if matching<=mismatch_lim{
@@ -364,9 +364,6 @@ fn main() {
             .arg(arg!(-t --tree <TREE_FILE>"Queries tree")
                 .required(true)
                 )
-            .arg(arg!(-o --out <OUT_FILE>"Output file")
-                .required(true)
-                )
             )
         .subcommand(Command::new("query_dir")
             .about("Classify reads from fastq dir")
@@ -415,7 +412,7 @@ fn main() {
         Some(("query",  sub_m)) => {
             let mut tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
-            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), sub_m.get_one::<String>("out").expect("required").as_str(), percent_mismatch);
+            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), format!("{}.txt", sub_m.get_one::<String>("reads").expect("required")).as_str(), percent_mismatch);
 
         },
         Some(("quick_build",  sub_m)) => {
@@ -428,7 +425,7 @@ fn main() {
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
             let files = get_files(sub_m.get_one::<String>("read_dir").expect("required").as_str());
             for file in files{
-                let save_file = format!("{}/{}.out", sub_m.get_one::<String>("out").expect("required").as_str(), file.split("/").collect::<Vec<&str>>().last().unwrap());
+                let save_file = format!("{}/{}.txt", sub_m.get_one::<String>("out").expect("required").as_str(), file.split("/").collect::<Vec<&str>>().last().unwrap());
                 search_fastq(&mut tree, &file, &save_file, percent_mismatch);
             }
         },
