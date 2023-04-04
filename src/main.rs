@@ -76,9 +76,7 @@ fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String
         .map(|x| *x as char)
         .collect();
         
-        if x.contains(&'N'){}
-        else{
-            let seq: Vec<SeqElement> = x.iter()
+        let seq: Vec<SeqElement> = x.iter()
             .map(|x|{
                 match x{
                     'A' => SeqElement::A,
@@ -89,24 +87,22 @@ fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String
                 }
             })
             .collect();
-            let string_len = seq.len();
-        
-            if string_len>max_depth.try_into().unwrap(){
-                let num_iter = string_len+1-(max_depth);
-                for (n, depth) in (0..num_iter).enumerate(){
-                    tree.add_string(seq[depth..depth+(max_depth)].to_vec(), format!("{}___{}", result_data.id(), n));
-                }
-                
+        let string_len = seq.len();
+    
+        if string_len>max_depth.try_into().unwrap(){
+            let num_iter = string_len+1-(max_depth);
+            for (n, depth) in (0..num_iter).enumerate(){
+                tree.add_string(seq[depth..depth+(max_depth)].to_vec(), format!("{}___{}", result_data.id(), n));
             }
-            strings.insert(format!("{}", result_data.id()), seq);
-            pb.inc(1);   
-            count+=1;
-            if count==num_seq {
-                break;
-            }
+            
+        }
+        strings.insert(format!("{}", result_data.id()), seq);
+        pb.inc(1);   
+        count+=1;
+        if count==num_seq {
+            break;
         }
     }
-    
     tree.set_strings(strings);
     tree
 }
@@ -155,23 +151,17 @@ fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
         }
 }
 
-fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>, mismatch_lim: usize)->Option<(usize, Vec<bool>)>{
-    let mut count:usize = 0;
-    let mut match_vec:Vec<bool> = Vec::new();
-    let it = ref_seq.iter().zip(read_seq.iter());
-    for (x,y) in it{
+fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->(usize, Vec<bool>){
+    let count = ref_seq.iter().zip(read_seq.iter()).filter(|(x, y)| x!=y).count();
+    let match_vec = ref_seq.iter().zip(read_seq.iter()).map(|(x, y)| {
         if x!=y{
-            count +=1;
-            match_vec.push(false);
+            return false;
         }
         else{
-            match_vec.push(true);
+            return true;
         }
-        if count>mismatch_lim{
-            return None;
-        }
-    }
-    Some((count, match_vec))
+    }).collect();
+    (count, match_vec)
 }
 
 fn score(match_seq: Vec<bool>) -> usize{
@@ -216,13 +206,9 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
                         let ref_sice: Vec<SeqElement> = ref_seq[hit_pos-depth..hit_pos-depth+string_len].to_vec();
                         // println!("{}", &(**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
                         // match_set.insert((ref_sice.clone(), q_seq.clone(), mismatch_lim));
-                        let matching:Option<(usize, Vec<bool>)> = hamming_distance(&ref_sice, &q_seq, mismatch_lim);
-                        match matching {
-                            None => {},
-                            Some(i) => {
-                                // println!("{:?}", (**hit_id).split('_').collect::<Vec<&str>>()[0].to_string());
-                                match_set.insert(((**hit_id).split("___").collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), score(i.1), hit_pos));
-                            },
+                        let matching:(usize, Vec<bool>) = hamming_distance(&ref_sice, &q_seq);
+                        if matching.0<mismatch_lim{
+                            match_set.insert(((**hit_id).split("___").collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), score(matching.1), hit_pos));
                         }
                         // if matching<=mismatch_lim{
                         //     match_set.insert(((**hit_id).split('_').collect::<Vec<&str>>()[0].to_string(), q_seq_id.clone(), matching));
@@ -287,7 +273,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
         let read_id: String = read_data.id().to_string();
         // let read_num: usize = read_data.desc().unwrap().split(' ').collect::<Vec<&str>>()[0].parse().unwrap();
         let _read_len: usize = read_data.desc().unwrap().split(' ').collect::<Vec<&str>>()[1].split('=').collect::<Vec<&str>>()[1].parse().unwrap();
-        let _read_qual: Vec<u8> = read_data.qual().to_vec();
+        let read_qual: Vec<u8> = read_data.qual().to_vec().iter().map(|x| x-33).collect();
         
 
         let x: Vec<char> = read_data.seq()
@@ -296,10 +282,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
         .map(|x| *x as char)
         .collect();
         
-        if x.contains(&'N'){
-        }
-        else{
-            let seq: Vec<SeqElement> = x.iter()
+        let seq: Vec<SeqElement> = x.iter()
             .map(|x|{
                 match x{
                     'A' => SeqElement::A,
@@ -310,18 +293,17 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
                 }
             })
             .collect();
-            let matches = query_tree(tree, seq, read_id, percent_match);
-            if !matches.is_empty(){
-                if !id_flag{
-                    id_flag = !id_flag;
-                    pb.println("Positive ID");
-                }
-                match_set.extend(matches.clone());
+        let matches = query_tree(tree, seq, read_id, percent_match);
+        if !matches.is_empty(){
+            if !id_flag{
+                id_flag = !id_flag;
+                pb.println("Positive ID");
             }
-            for (seq_id, read_id, match_score, hit_pos) in matches.iter(){
-                let out_string:String = format!("{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos);
-                file_ref.write_all(out_string.as_bytes()).expect("write failed");
-            }
+            match_set.extend(matches.clone());
+        }
+        for (seq_id, read_id, match_score, hit_pos) in matches.iter(){
+            let out_string:String = format!("{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos);
+            file_ref.write_all(out_string.as_bytes()).expect("write failed");
         }
         pb.inc(1);
         
