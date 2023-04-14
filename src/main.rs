@@ -190,26 +190,37 @@ fn check_pos(ref_seq_len: &usize, depth: &usize, ref_seq_pos: &usize, q_len: &us
     depth<=ref_seq_pos && (q_len-depth)<=(ref_seq_len-ref_seq_pos)
 }
 
-fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, percent_match: f32)->MutexGuard<Vec<(String, String, usize, usize)>>{
-    let mut match_set:Arc<Mutex<Vec<(String, String, usize, usize)>>> = Arc::new(Mutex::new(Vec::new()));    //ref seq id, read id, score, start_pos
+fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, percent_match: f32)->Vec<(String, String, usize, usize)>{
+    let mut match_set:Vec<(String, String, usize, usize)> = Vec::new();    //ref seq id, read id, score, start_pos
     let string_len: usize = q_seq.len();
     let mismatch_lim: usize = (q_seq.len() as f32 * percent_match).floor() as usize;
     let chunk_size: usize = string_len/(mismatch_lim+1);
     if string_len>=chunk_size{
-        (0..string_len+1-(chunk_size)).into_par_iter().for_each(|depth| {
-            let mut lmer_matches: Vec<(String, String, usize, usize)> = tree.find(q_seq[depth..depth+(chunk_size)].to_vec()).par_iter()
+        for depth in (0..string_len+1-(chunk_size)){
+            let mut lmer_matches: Vec<(String, String, usize, usize)> = tree.find(q_seq[depth..depth+(chunk_size)].to_vec()).iter()
                                                                      .map(|(ref_id, ref_pos)| {
                                                                          (ref_id.split("___").collect::<Vec<&str>>()[0].to_string(), ref_id.split("___").collect::<Vec<&str>>()[1].parse().unwrap())
                                                                      })
                                                                      .filter(|(ref_id, ref_seq_pos)| check_pos(&tree.get_string(&(ref_id)).len(), &depth, ref_seq_pos, &string_len))
                                                                      .map(|(ref_id, ref_seq_pos)| {
                                                                         (ref_id.clone(), q_seq_id.clone(), score(hamming_distance(&tree.get_string(&ref_id)[ref_seq_pos-depth..ref_seq_pos-depth+string_len].to_vec(), &q_seq).1), ref_seq_pos)
-                                                                     })
-                                                                     .collect();
-            match_set.lock().unwrap().append(&mut lmer_matches);
-        });
+                                                                     }).collect();
+            match_set.append(&mut lmer_matches);
+        }
+        // (0..string_len+1-(chunk_size)).into_par_iter().for_each(|depth| {
+        //     let mut lmer_matches: Vec<(String, String, usize, usize)> = tree.find(q_seq[depth..depth+(chunk_size)].to_vec()).par_iter()
+        //                                                              .map(|(ref_id, ref_pos)| {
+        //                                                                  (ref_id.split("___").collect::<Vec<&str>>()[0].to_string(), ref_id.split("___").collect::<Vec<&str>>()[1].parse().unwrap())
+        //                                                              })
+        //                                                              .filter(|(ref_id, ref_seq_pos)| check_pos(&tree.get_string(&(ref_id)).len(), &depth, ref_seq_pos, &string_len))
+        //                                                              .map(|(ref_id, ref_seq_pos)| {
+        //                                                                 (ref_id.clone(), q_seq_id.clone(), score(hamming_distance(&tree.get_string(&ref_id)[ref_seq_pos-depth..ref_seq_pos-depth+string_len].to_vec(), &q_seq).1), ref_seq_pos)
+        //                                                              })
+        //                                                              .collect();
+        //     match_set.lock().unwrap().append(&mut lmer_matches);
+        // });
     }
-    match_set.lock().unwrap()
+    match_set
 }
 
 fn save_tree(tree: &mut KGST<SeqElement, String>, output_path: String){
@@ -281,15 +292,15 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
                 }
             })
             .collect();
-        let matches = query_tree(tree, seq, read_id, percent_match);
+        let mut matches = query_tree(tree, seq, read_id, percent_match);
         if !matches.is_empty(){
             if !id_flag{
                 id_flag = !id_flag;
                 pb.println("Positive ID");
             }
-            match_set.extend(matches.clone());
+            match_set.append(&mut matches);
         }
-        for (seq_id, read_id, match_score, hit_pos) in matches.iter(){
+        for (seq_id, read_id, match_score, hit_pos) in (matches).iter(){
             let out_string:String = format!("{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos);
             file_ref.write_all(out_string.as_bytes()).expect("write failed");
         }
