@@ -10,8 +10,6 @@ use std::{fs, fmt};
 use std::io::Write;
 use error_chain::error_chain;
 use glob::{glob_with, MatchOptions};
-use rayon::prelude::*;
-use std::sync::{Arc, Mutex, MutexGuard};
 
 error_chain! {
     foreign_links {
@@ -190,14 +188,14 @@ fn check_pos(ref_seq_len: &usize, depth: &usize, ref_seq_pos: &usize, q_len: &us
     depth<=ref_seq_pos && (q_len-depth)<=(ref_seq_len-ref_seq_pos)
 }
 
-fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, percent_match: f32)->MutexGuard<Vec<(String, String, usize, usize)>>{
-    let mut match_set:Arc<Mutex<Vec<(String, String, usize, usize)>>> = Arc::new(Mutex::new(Vec::new()));    //ref seq id, read id, score, start_pos
+fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, percent_match: f32)->Vec<(String, String, usize, usize)>{
+    let mut match_set:Vec<(String, String, usize, usize)> = Vec::new();    //ref seq id, read id, score, start_pos
     let string_len: usize = q_seq.len();
     let mismatch_lim: usize = (q_seq.len() as f32 * percent_match).floor() as usize;
     let chunk_size: usize = string_len/(mismatch_lim+1);
     if string_len>=chunk_size{
-        (0..string_len+1-(chunk_size)).into_par_iter().for_each(|depth| {
-            let mut lmer_matches: Vec<(String, String, usize, usize)> = tree.find(q_seq[depth..depth+(chunk_size)].to_vec()).par_iter()
+        for depth in (0..string_len+1-(chunk_size)) {
+            let mut lmer_matches: Vec<(String, String, usize, usize)> = tree.find(q_seq[depth..depth+(chunk_size)].to_vec()).iter()
                                                                      .map(|(ref_id, ref_pos)| {
                                                                          (ref_id.split("___").collect::<Vec<&str>>()[0].to_string(), ref_id.split("___").collect::<Vec<&str>>()[1].parse().unwrap())
                                                                      })
@@ -206,10 +204,10 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
                                                                         (ref_id.clone(), q_seq_id.clone(), score(hamming_distance(&tree.get_string(&ref_id)[ref_seq_pos-depth..ref_seq_pos-depth+string_len].to_vec(), &q_seq).1), ref_seq_pos)
                                                                      })
                                                                      .collect();
-            match_set.lock().unwrap().append(&mut lmer_matches);
-        });
+            match_set.append(&mut lmer_matches);
+        };
     }
-    match_set.lock().unwrap()
+    match_set
 }
 
 fn save_tree(tree: &mut KGST<SeqElement, String>, output_path: String){
