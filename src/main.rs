@@ -196,28 +196,17 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
     let mismatch_lim: usize = (q_seq.len() as f32 * percent_match).floor() as usize;
     let chunk_size: usize = string_len/(mismatch_lim+1);
     if string_len>=chunk_size{
-        for depth in (0..string_len+1-(chunk_size)) {
-            match_set.par_extend(tree.find(q_seq[depth..depth+(chunk_size)].to_vec()).par_iter()
-            .map(|(ref_id, ref_pos)| {
-                (ref_id.split("___").collect::<Vec<&str>>()[0].to_string(), ref_id.split("___").collect::<Vec<&str>>()[1].parse().unwrap())
-            })
-            .filter(|(ref_id, ref_seq_pos)| check_pos(&tree.get_string(&(ref_id)).len(), &depth, ref_seq_pos, &string_len))
-            .map(|(ref_id, ref_seq_pos)| {
-               (ref_id.clone(), q_seq_id.clone(), score(hamming_distance(&tree.get_string(&ref_id)[ref_seq_pos-depth..ref_seq_pos-depth+string_len].to_vec(), &q_seq).1), ref_seq_pos)
-            }));
-            // let mut lmer_matches: Vec<(String, String, usize, usize)> = tree.find(q_seq[depth..depth+(chunk_size)].to_vec()).iter()
-            //                                                          .map(|(ref_id, ref_pos)| {
-            //                                                              (ref_id.split("___").collect::<Vec<&str>>()[0].to_string(), ref_id.split("___").collect::<Vec<&str>>()[1].parse().unwrap())
-            //                                                          })
-            //                                                          .filter(|(ref_id, ref_seq_pos)| check_pos(&tree.get_string(&(ref_id)).len(), &depth, ref_seq_pos, &string_len))
-            //                                                          .map(|(ref_id, ref_seq_pos)| {
-            //                                                             (ref_id.clone(), q_seq_id.clone(), score(hamming_distance(&tree.get_string(&ref_id)[ref_seq_pos-depth..ref_seq_pos-depth+string_len].to_vec(), &q_seq).1), ref_seq_pos)
-            //                                                          })
-            //                                                          .collect();
-            // match_set.append(&mut lmer_matches);
-
-        };
-
+        match_set.par_extend((0..string_len+1-(chunk_size)).into_par_iter().map(|depth| {
+            let mut temp_matches: Vec<(String, usize, usize)> = Vec::new();
+            for i in tree.find(q_seq[depth..depth+(chunk_size)].to_vec()){
+                temp_matches.push((i.0.split("___").collect::<Vec<&str>>()[0].to_string(), i.0.split("___").collect::<Vec<&str>>()[1].parse().unwrap(), depth));
+            }
+            return temp_matches;
+        }).flatten()
+        .filter(|(ref_id, ref_seq_pos, depth)| check_pos(&tree.get_string(&(ref_id)).len(), &depth, ref_seq_pos, &string_len))
+        .map(|(ref_id, ref_seq_pos, depth)| {
+            (ref_id.clone(), q_seq_id.clone(), score(hamming_distance(&tree.get_string(&ref_id)[ref_seq_pos-depth..ref_seq_pos-depth+string_len].to_vec(), &q_seq).1), ref_seq_pos)
+         }));
     }
     match_set
 }
