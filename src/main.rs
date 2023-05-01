@@ -282,27 +282,40 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             .collect();
             
         let hits: HashSet<(String, usize)> = query_tree(tree, seq.clone(), read_id.clone(), percent_match);
+
+
         
         let mut matches: HashSet<(String, String, usize, usize)> = HashSet::new();
+        
+        matches.par_extend(hits.into_par_iter()
+        .filter(|(ref_id, start_pos)| {
+            // println!("{:?}", start_pos+read_len<refs.get(ref_id).unwrap().len());
+            start_pos+read_len<refs.get(ref_id).unwrap().len()
+        })
+        .map(|(ref_id, start_pos)| {
+        // println!("{:?}: {:?}, {:?}, {:?}", ref_id, start_pos, read_len, &refs.get(&ref_id).unwrap().len());
+        (read_id.clone(), ref_id.clone(), hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+read_len].to_vec(), &seq).0, start_pos)
+    }));
 
-        matches.par_extend(hits.into_par_iter().map(|(ref_id, start_pos)| {
-            (read_id.clone(), ref_id.clone(), hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+read_len].to_vec(), &seq).0, start_pos)
-        }));
+        // println!("{:?}", matches);
+        
+        // matches.extend();
 
         if(!matches.is_empty()){
             if(!id_flag){
                 id_flag = true;
                 println!("Match found");
             }
-            match_set.par_extend(matches.into_par_iter());
+            match_set.par_extend(matches.clone().into_par_iter());
+            for (seq_id, read_id, match_score, hit_pos) in (matches).iter(){
+                let out_string:String = format!("{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos);
+                file_ref.write_all(out_string.as_bytes()).expect("write failed");
+            }
         }
-        
+        pb.inc(1);
     }
-    for (seq_id, read_id, match_score, hit_pos) in (match_set).iter(){
-        let out_string:String = format!("{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos);
-        file_ref.write_all(out_string.as_bytes()).expect("write failed");
-    }
-    pb.inc(1);
+    
+    
 }
 
 fn main() {
