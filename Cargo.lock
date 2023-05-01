@@ -450,7 +450,7 @@ dependencies = [
 [[package]]
 name = "generalized_suffix_tree"
 version = "0.1.0"
-source = "git+https://github.com/sriram98v/generalized_suffix_tree#72eca1014c2345204a20bb5a25a6dbd1bf8ce370"
+source = "git+https://github.com/sriram98v/generalized_suffix_tree#79821e1e8d4c9bd9e94b82b01f9e1d55c47b6f24"
 dependencies = [
  "serde",
  "serde_json",
