@@ -232,7 +232,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
 
     let reader = fastq::Reader::from_file(fastq_file).unwrap();
 
-    let mut id_flag:bool = false;
+    let mut id_flag: bool = false;
 
     let total_size = reader.records().count();
 
@@ -282,10 +282,20 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             .collect();
             
         let hits: HashSet<(String, usize)> = query_tree(tree, seq.clone(), read_id.clone(), percent_match);
+        
+        let mut matches: HashSet<(String, String, usize, usize)> = HashSet::new();
 
-        match_set.par_extend(hits.into_par_iter().map(|(ref_id, start_pos)| {
+        matches.par_extend(hits.into_par_iter().map(|(ref_id, start_pos)| {
             (read_id.clone(), ref_id.clone(), hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+read_len].to_vec(), &seq).0, start_pos)
         }));
+
+        if(!matches.is_empty()){
+            if(!id_flag){
+                id_flag = true;
+                println!("Match found");
+            }
+            match_set.par_extend(matches.into_par_iter());
+        }
         
     }
     for (seq_id, read_id, match_score, hit_pos) in (match_set).iter(){
