@@ -165,16 +165,16 @@ fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
         }
 }
 
-fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->(usize, Vec<u8>){
+fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->(usize, String){
     let count = ref_seq.iter().zip(read_seq.iter()).filter(|(x, y)| x!=y).count();
     let match_vec = ref_seq.iter().zip(read_seq.iter()).map(|(x, y)| {
         if x!=y{
-            return 0;
+            return 0.to_string();
         }
         else{
-            return 1;
+            return 1.to_string();
         }
-    }).collect();
+    }).collect::<String>();
     (count, match_vec)
 }
 
@@ -240,7 +240,7 @@ fn load_tree(fname:&String) -> KGST<SeqElement, String>{
 fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&str, percent_match:f32){
     println!("Classifying read file: {}", &fastq_file);
 
-    let mut match_set: HashSet<(String, String, usize, usize, Vec<u8>)> = HashSet::new();
+    let mut match_set: HashSet<(String, String, usize, usize, String)> = HashSet::new();
 
     let reader = fastq::Reader::from_file(fastq_file).unwrap();
 
@@ -297,7 +297,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
 
 
         
-        let mut matches: HashSet<(String, String, usize, usize, Vec<u8>)> = HashSet::new();
+        let mut matches: HashSet<(String, String, usize, usize, String)> = HashSet::new();
         
         matches.par_extend(hits.into_par_iter()
         .filter(|(ref_id, start_pos)| {
@@ -320,7 +320,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             }
             match_set.par_extend(matches.clone().into_par_iter());
             for (seq_id, read_id, match_score, hit_pos, match_string) in (matches).iter(){
-                let out_string:String = format!("{}\t{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos, match_string.into_iter().map(|i| i.to_string()).collect::<String>());
+                let out_string:String = format!("{}\t{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos, match_string);
                 file_ref.write_all(out_string.as_bytes()).expect("write failed");
             }
         }
