@@ -320,7 +320,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             }
             match_set.par_extend(matches.clone().into_par_iter());
             for (seq_id, read_id, match_score, hit_pos, match_string) in (matches).iter(){
-                let out_string:String = format!("{}\t{}\t{}\t{}\t{:?}\n", seq_id, read_id, match_score, hit_pos, match_string);
+                let out_string:String = format!("{}\t{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos, match_string.into_iter().map(|i| i.to_string()).collect::<String>());
                 file_ref.write_all(out_string.as_bytes()).expect("write failed");
             }
         }
