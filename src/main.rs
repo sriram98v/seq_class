@@ -102,7 +102,7 @@ fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String
             .collect();
         let string_len = seq.len();
     
-        if string_len>max_depth.try_into().unwrap(){
+        if string_len>max_depth{
             let num_iter = string_len+1-(max_depth);
             for (n, depth) in (0..num_iter).enumerate(){
                 tree.add_string(seq[depth..depth+(max_depth)].to_vec(), format!("{}___{}", result_data.id(), n));
@@ -164,7 +164,7 @@ fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
         }
 }
 
-fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->(usize, String){
+fn hamming_distance(ref_seq: &[SeqElement], read_seq: &[SeqElement])->(usize, String){
     let count = ref_seq.iter().zip(read_seq.iter()).filter(|(x, y)| x!=y).count();
     let match_vec = ref_seq.iter().zip(read_seq.iter()).map(|(x, y)| {
         if x!=y{
@@ -175,26 +175,6 @@ fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->(usi
         }
     }).collect::<String>();
     (count, match_vec)
-}
-
-fn score(match_seq: Vec<bool>) -> usize{
-    let mut total: usize = 0;
-    let mut count:usize = 0;
-    for el in match_seq.iter(){
-        match el{
-            &true => count +=1,
-            &false => {
-                if count>=22{
-                    total += (count-15).pow(2);
-                }
-                count = 0;
-            }
-        }
-    }
-    if count>=15{
-        total += (count-15).pow(2);
-    }
-    total
 }
 
 fn check_pos(ref_seq_len: &usize, depth: &usize, ref_seq_pos: &usize, q_len: &usize)->bool{
@@ -304,18 +284,11 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             start_pos+seq.len()<refs.get(ref_id).unwrap().len()
         })
         .map(|(ref_id, start_pos)| {
-            let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+seq.len()].to_vec(), &seq);
+            let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+seq.len()], &seq);
             (read_id.clone(), ref_id, hamming_match.0, start_pos, hamming_match.1)
-        
-        })
-        .filter(|(_seq_id, _read_id, match_score, _hit_pos, _match_string)| {
-            (*match_score as f32)<=percent_mismatch*(seq.len() as f32)
         })
     );
 
-        // println!("{:?}", matches);
-        
-        // matches.extend();
 
         if !matches.is_empty() {
             if !id_flag {
@@ -431,32 +404,32 @@ fn main() {
             save_tree(&mut tree, sub_m.get_one::<String>("out").expect("required").to_string());
         },
         Some(("query",  sub_m)) => {
-            let mut tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
+            let tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
-            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), format!("{}.txt", sub_m.get_one::<String>("reads").expect("required")).as_str(), percent_mismatch);
+            search_fastq(&tree, sub_m.get_one::<String>("reads").expect("required").as_str(), format!("{}.txt", sub_m.get_one::<String>("reads").expect("required")).as_str(), percent_mismatch);
 
         },
         Some(("quick_build",  sub_m)) => {
-            let mut tree: KGST<SeqElement, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), *sub_m.get_one::<u32>("num").expect("required"));
+            let tree: KGST<SeqElement, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), *sub_m.get_one::<u32>("num").expect("required"));
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
-            search_fastq(&mut tree, sub_m.get_one::<String>("reads").expect("required").as_str(), sub_m.get_one::<String>("out").expect("required").as_str(), percent_mismatch);
+            search_fastq(&tree, sub_m.get_one::<String>("reads").expect("required").as_str(), sub_m.get_one::<String>("out").expect("required").as_str(), percent_mismatch);
         },
         Some(("query_dir",  sub_m)) => {
-            let mut tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
+            let tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
             let files = get_files(sub_m.get_one::<String>("read_dir").expect("required").as_str());
             for file in files{
                 let save_file = format!("{}/{}.txt", sub_m.get_one::<String>("out").expect("required").as_str(), file.split('/').collect::<Vec<&str>>().last().unwrap());
-                search_fastq(&mut tree, &file, &save_file, percent_mismatch);
+                search_fastq(&tree, &file, &save_file, percent_mismatch);
             }
         },
         Some(("query_dir_all",  sub_m)) => {
-            let mut tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
+            let tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
             let files = get_files_all(sub_m.get_one::<String>("read_dir").expect("required").as_str());
             for file in files{
                 let save_file = format!("{}/{}.txt", sub_m.get_one::<String>("out").expect("required").as_str(), file.split('/').collect::<Vec<&str>>().last().unwrap());
-                search_fastq(&mut tree, &file, &save_file, percent_mismatch);
+                search_fastq(&tree, &file, &save_file, percent_mismatch);
             }
         },
         _ => {
