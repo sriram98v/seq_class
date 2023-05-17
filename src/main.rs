@@ -215,7 +215,7 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, _q_seq_id:S
             }
             temp_matches
         }).flatten()
-        .filter(|(ref_id, ref_seq_pos, depth)| check_pos(&tree.get_string((ref_id)).len(), depth, ref_seq_pos, &string_len))
+        .filter(|(ref_id, ref_seq_pos, depth)| check_pos(&tree.get_string(ref_id).len(), depth, ref_seq_pos, &string_len))
         .map(|(ref_id, ref_seq_pos, _depth)| (ref_id, ref_seq_pos) ));
     }
     match_set
