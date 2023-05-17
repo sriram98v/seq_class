@@ -109,7 +109,7 @@ fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String
             }
             
         }
-        strings.insert(format!("{}", result_data.id()), seq);
+        strings.insert(result_data.id().to_string(), seq);
         pb.inc(1);   
         count+=1;
         if count==num_seq {
@@ -120,8 +120,8 @@ fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String
     tree
 }
 
-fn match_prob(q_seq_match_vec: Vec<bool>, quality_score_vec: Vec<u8>) -> f32{
-    return 0.0;
+fn match_prob(_q_seq_match_vec: Vec<bool>, _quality_score_vec: Vec<u8>) -> f32{
+    0.0
 }
 
 fn complement(q_seq: Vec<SeqElement>)->Vec<SeqElement>{
@@ -146,7 +146,7 @@ fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
         .collect();
     
         if x.contains(&'N'){
-            return None;
+            None
         }
         else{
             let seq: Vec<SeqElement> = x.iter()
@@ -160,7 +160,7 @@ fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
                 }
             })
             .collect();
-            return Some(seq);
+            Some(seq)
         }
 }
 
@@ -168,10 +168,10 @@ fn hamming_distance(ref_seq: &Vec<SeqElement>, read_seq: &Vec<SeqElement>)->(usi
     let count = ref_seq.iter().zip(read_seq.iter()).filter(|(x, y)| x!=y).count();
     let match_vec = ref_seq.iter().zip(read_seq.iter()).map(|(x, y)| {
         if x!=y{
-            return 0.to_string();
+            0.to_string()
         }
         else{
-            return 1.to_string();
+            1.to_string()
         }
     }).collect::<String>();
     (count, match_vec)
@@ -201,7 +201,7 @@ fn check_pos(ref_seq_len: &usize, depth: &usize, ref_seq_pos: &usize, q_len: &us
     depth<=ref_seq_pos && (q_len-depth)<=(ref_seq_len-ref_seq_pos)
 }
 
-fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, percent_mismatch: f32)->HashSet<(String, usize)>{
+fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, _q_seq_id:String, percent_mismatch: f32)->HashSet<(String, usize)>{
     let mut match_set: HashSet<(String, usize)> = HashSet::new();    //ref seq id, start_pos
     let string_len: usize = q_seq.len();
     let mismatch_lim: usize = (q_seq.len() as f32 * percent_mismatch).floor() as usize;
@@ -213,10 +213,10 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:St
             for i in tree.find(q_seq[depth..depth+(chunk_size)].to_vec()){
                 temp_matches.push((i.0.split("___").collect::<Vec<&str>>()[0].to_string(), i.0.split("___").collect::<Vec<&str>>()[1].parse().unwrap(), depth));
             }
-            return temp_matches;
+            temp_matches
         }).flatten()
-        .filter(|(ref_id, ref_seq_pos, depth)| check_pos(&tree.get_string(&(ref_id)).len(), &depth, ref_seq_pos, &string_len))
-        .map(|(ref_id, ref_seq_pos, depth)| (ref_id, ref_seq_pos) ));
+        .filter(|(ref_id, ref_seq_pos, depth)| check_pos(&tree.get_string((ref_id)).len(), depth, ref_seq_pos, &string_len))
+        .map(|(ref_id, ref_seq_pos, _depth)| (ref_id, ref_seq_pos) ));
     }
     match_set
 }
@@ -271,7 +271,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
         
         let read_id: String = read_data.id().to_string();
         // let read_num: usize = read_data.desc().unwrap().split(' ').collect::<Vec<&str>>()[0].parse().unwrap();
-        let read_qual: Vec<u8> = read_data.qual().to_vec().iter().map(|x| x-33).collect();
+        let _read_qual: Vec<u8> = read_data.qual().to_vec().iter().map(|x| x-33).collect();
         
 
         let x: Vec<char> = read_data.seq()
@@ -305,10 +305,10 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
         })
         .map(|(ref_id, start_pos)| {
             let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+seq.len()].to_vec(), &seq);
-            (read_id.clone(), ref_id.clone(), hamming_match.0, start_pos, hamming_match.1)
+            (read_id.clone(), ref_id, hamming_match.0, start_pos, hamming_match.1)
         
         })
-        .filter(|(seq_id, read_id, match_score, hit_pos, match_string)| {
+        .filter(|(_seq_id, _read_id, match_score, _hit_pos, _match_string)| {
             (*match_score as f32)<=percent_mismatch*(seq.len() as f32)
         })
     );
@@ -317,8 +317,8 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
         
         // matches.extend();
 
-        if(!matches.is_empty()){
-            if(!id_flag){
+        if !matches.is_empty() {
+            if !id_flag {
                 id_flag = true;
                 println!("Match found");
             }
@@ -446,7 +446,7 @@ fn main() {
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
             let files = get_files(sub_m.get_one::<String>("read_dir").expect("required").as_str());
             for file in files{
-                let save_file = format!("{}/{}.txt", sub_m.get_one::<String>("out").expect("required").as_str(), file.split("/").collect::<Vec<&str>>().last().unwrap());
+                let save_file = format!("{}/{}.txt", sub_m.get_one::<String>("out").expect("required").as_str(), file.split('/').collect::<Vec<&str>>().last().unwrap());
                 search_fastq(&mut tree, &file, &save_file, percent_mismatch);
             }
         },
@@ -455,7 +455,7 @@ fn main() {
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
             let files = get_files_all(sub_m.get_one::<String>("read_dir").expect("required").as_str());
             for file in files{
-                let save_file = format!("{}/{}.txt", sub_m.get_one::<String>("out").expect("required").as_str(), file.split("/").collect::<Vec<&str>>().last().unwrap());
+                let save_file = format!("{}/{}.txt", sub_m.get_one::<String>("out").expect("required").as_str(), file.split('/').collect::<Vec<&str>>().last().unwrap());
                 search_fastq(&mut tree, &file, &save_file, percent_mismatch);
             }
         },
