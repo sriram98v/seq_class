@@ -9,7 +9,6 @@ use serde::{Serialize, Deserialize};
 use std::{fs, fmt};
 use std::io::Write;
 use error_chain::error_chain;
-use std::time::{Duration, Instant};
 use glob::{glob_with, MatchOptions};
 use rayon::prelude::*;
 
@@ -202,11 +201,12 @@ fn check_pos(ref_seq_len: &usize, depth: &usize, ref_seq_pos: &usize, q_len: &us
     depth<=ref_seq_pos && (q_len-depth)<=(ref_seq_len-ref_seq_pos)
 }
 
-fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, percent_match: f32)->HashSet<(String, usize)>{
-    let mut match_set: HashSet<(String, usize)> = HashSet::new();    //ref seq id, read id, score, start_pos
+fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, q_seq_id:String, percent_mismatch: f32)->HashSet<(String, usize)>{
+    let mut match_set: HashSet<(String, usize)> = HashSet::new();    //ref seq id, start_pos
     let string_len: usize = q_seq.len();
-    let mismatch_lim: usize = (q_seq.len() as f32 * percent_match).floor() as usize;
+    let mismatch_lim: usize = (q_seq.len() as f32 * percent_mismatch).floor() as usize;
     let chunk_size: usize = string_len/(mismatch_lim+1);
+    // println!("Chunk_size: {}", &chunk_size);
     if string_len>=chunk_size{
         match_set.par_extend((0..string_len+1-(chunk_size)).into_par_iter().map(|depth| {
             let mut temp_matches: Vec<(String, usize, usize)> = Vec::new();
@@ -237,7 +237,7 @@ fn load_tree(fname:&String) -> KGST<SeqElement, String>{
     tree
 }
 
-fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&str, percent_match:f32){
+fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&str, percent_mismatch:f32){
     println!("Classifying read file: {}", &fastq_file);
 
     let mut match_set: HashSet<(String, String, usize, usize, String)> = HashSet::new();
@@ -263,7 +263,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
       }
 
     let mut file_ref = fs::OpenOptions::new().create_new(true).append(true).open(result_file).expect("Unable to open file");
-    let result_header:String = "readID\tseqID\tscore\thit position\tmatch string\n".to_string();
+    let result_header:String = "readID\tseqID\tscore\thit position\tread_len\tmatch string\n".to_string();
     file_ref.write_all(result_header.as_bytes()).expect("write failed");
 
     for read in reader.records() {
@@ -271,7 +271,6 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
         
         let read_id: String = read_data.id().to_string();
         // let read_num: usize = read_data.desc().unwrap().split(' ').collect::<Vec<&str>>()[0].parse().unwrap();
-        let read_len: usize = read_data.desc().unwrap().split(' ').collect::<Vec<&str>>()[1].split('=').collect::<Vec<&str>>()[1].parse().unwrap();
         let read_qual: Vec<u8> = read_data.qual().to_vec().iter().map(|x| x-33).collect();
         
 
@@ -293,7 +292,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             })
             .collect();
             
-        let hits: HashSet<(String, usize)> = query_tree(tree, seq.clone(), read_id.clone(), percent_match);
+        let hits: HashSet<(String, usize)> = query_tree(tree, seq.clone(), read_id.clone(), percent_mismatch);
 
 
         
@@ -302,12 +301,17 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
         matches.par_extend(hits.into_par_iter()
         .filter(|(ref_id, start_pos)| {
             // println!("{:?}", start_pos+read_len<refs.get(ref_id).unwrap().len());
-            start_pos+read_len<refs.get(ref_id).unwrap().len()
+            start_pos+seq.len()<refs.get(ref_id).unwrap().len()
         })
         .map(|(ref_id, start_pos)| {
-            let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+read_len].to_vec(), &seq);
+            let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+seq.len()].to_vec(), &seq);
             (read_id.clone(), ref_id.clone(), hamming_match.0, start_pos, hamming_match.1)
-    }));
+        
+        })
+        .filter(|(seq_id, read_id, match_score, hit_pos, match_string)| {
+            (*match_score as f32)<=percent_mismatch*(seq.len() as f32)
+        })
+    );
 
         // println!("{:?}", matches);
         
@@ -320,7 +324,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             }
             match_set.par_extend(matches.clone().into_par_iter());
             for (seq_id, read_id, match_score, hit_pos, match_string) in (matches).iter(){
-                let out_string:String = format!("{}\t{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos, match_string);
+                let out_string:String = format!("{}\t{}\t{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos, seq.len(), match_string);
                 file_ref.write_all(out_string.as_bytes()).expect("write failed");
             }
         }
