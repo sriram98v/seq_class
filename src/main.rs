@@ -138,32 +138,6 @@ fn complement(q_seq: Vec<SeqElement>)->Vec<SeqElement>{
         .collect()
 }
 
-fn preprocess_read(read: &[u8])->Option<Vec<SeqElement>>{
-    let x: Vec<char> = read
-        .to_vec()
-        .iter()
-        .map(|x| *x as char)
-        .collect();
-    
-        if x.contains(&'N'){
-            None
-        }
-        else{
-            let seq: Vec<SeqElement> = x.iter()
-            .map(|x|{
-                match x{
-                    'A' => SeqElement::A,
-                    'G' => SeqElement::G,
-                    'T' => SeqElement::T,
-                    'C' => SeqElement::C,
-                    _ => SeqElement::E,
-                }
-            })
-            .collect();
-            Some(seq)
-        }
-}
-
 fn hamming_distance(ref_seq: &[SeqElement], read_seq: &[SeqElement])->(usize, String){
     let count = ref_seq.iter().zip(read_seq.iter()).filter(|(x, y)| x!=y).count();
     let match_vec = ref_seq.iter().zip(read_seq.iter()).map(|(x, y)| {
@@ -182,11 +156,10 @@ fn check_pos(ref_seq_len: &usize, depth: &usize, ref_seq_pos: &usize, q_len: &us
 }
 
 fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, _q_seq_id:String, percent_mismatch: f32)->HashSet<(String, usize)>{
-    let mut match_set: HashSet<(String, usize)> = HashSet::new();    //ref seq id, start_pos
+    let mut match_set: HashSet<(String, usize)> = HashSet::new();    // ref seq id, start_pos
     let string_len: usize = q_seq.len();
     let mismatch_lim: usize = (q_seq.len() as f32 * percent_mismatch).floor() as usize;
     let chunk_size: usize = string_len/(mismatch_lim+1);
-    // println!("Chunk_size: {}", &chunk_size);
     if string_len>=chunk_size{
         match_set.par_extend((0..string_len+1-(chunk_size)).into_par_iter().map(|depth| {
             let mut temp_matches: Vec<(String, usize, usize)> = Vec::new();
@@ -250,7 +223,6 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
         let read_data = read.unwrap();
         
         let read_id: String = read_data.id().to_string();
-        // let read_num: usize = read_data.desc().unwrap().split(' ').collect::<Vec<&str>>()[0].parse().unwrap();
         let _read_qual: Vec<u8> = read_data.qual().to_vec().iter().map(|x| x-33).collect();
         
 
@@ -280,7 +252,6 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
         
         matches.par_extend(hits.into_par_iter()
         .filter(|(ref_id, start_pos)| {
-            // println!("{:?}", start_pos+read_len<refs.get(ref_id).unwrap().len());
             start_pos+seq.len()<refs.get(ref_id).unwrap().len()
         })
         .map(|(ref_id, start_pos)| {
