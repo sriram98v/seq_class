@@ -1,16 +1,18 @@
 extern crate clap;
 extern crate shrust;
+pub mod alphabet;
+pub mod utils;
 use clap::{arg, Command};
 use std::collections::{HashMap, HashSet};
 use bio::io::{fasta,  fastq};
 use generalized_suffix_tree::suffix_tree::KGST;
 use indicatif::{ProgressBar, ProgressStyle};
-use serde::{Serialize, Deserialize};
-use std::{fs, fmt};
+use std::{fs};
 use std::io::Write;
 use error_chain::error_chain;
-use glob::{glob_with, MatchOptions};
 use rayon::prelude::*;
+use crate::alphabet::*;
+use crate::utils::*;
 
 error_chain! {
     foreign_links {
@@ -18,48 +20,6 @@ error_chain! {
         Pattern(glob::PatternError);
     }
 }
-
-#[derive(Eq, Hash, PartialEq, Copy, Clone, Debug, Serialize, Deserialize)]
-enum SeqElement {
-    A, G, T, C, E
-}
-
-impl fmt::Display for SeqElement {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SeqElement::A => write!(f, "A"),
-            SeqElement::G => write!(f, "G"),
-            SeqElement::T => write!(f, "T"),
-            SeqElement::C => write!(f, "C"),
-            SeqElement::E => write!(f, "$"),
-        }
-    }
-}
-
-fn get_files(dir:&str) -> Vec<String>{
-    let mut files: Vec<String> = Vec::new();
-    let options = MatchOptions {
-        case_sensitive: false,
-        ..Default::default()
-    };
-    for entry in glob_with(format!("{}/**/single*.fastq", dir).as_str(), options).unwrap() {
-        files.push(format!("{}", entry.expect("file").display()));
-    }
-    files
-}
-
-fn get_files_all(dir:&str) -> Vec<String>{
-    let mut files: Vec<String> = Vec::new();
-    let options = MatchOptions {
-        case_sensitive: false,
-        ..Default::default()
-    };
-    for entry in glob_with(format!("{}/**/*.fastq", dir).as_str(), options).unwrap() {
-        files.push(format!("{}", entry.expect("file").display()));
-    }
-    files
-}
-
 
 fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String>{
     println!("Building tree from {}", file);
@@ -151,10 +111,6 @@ fn hamming_distance(ref_seq: &[SeqElement], read_seq: &[SeqElement])->(usize, St
     (count, match_vec)
 }
 
-// fn check_pos(ref_seq_len: &usize, depth: &usize, ref_seq_pos: &usize, q_len: &usize)->bool{
-//     depth<=ref_seq_pos && (q_len-depth)<=(ref_seq_len-ref_seq_pos)
-// }
-
 fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, percent_mismatch: f32)->HashSet<(String, usize)>{
     let mut match_set: HashSet<(String, usize)> = HashSet::new();    // ref seq id, start_pos
     let string_len: usize = q_seq.len();
@@ -176,9 +132,9 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, percent_mis
                 temp_matches.push((i.0.split("___").collect::<Vec<&str>>()[0].to_string(), i.0.split("___").collect::<Vec<&str>>()[1].parse().unwrap(), depth));
             }
             temp_matches
-        }).flatten()
-        // .filter(|(ref_id, ref_seq_pos, depth)| check_pos(&tree.get_string(ref_id).len(), depth, ref_seq_pos, &string_len))
-        .map(|(ref_id, ref_seq_pos, _depth)| (ref_id, ref_seq_pos) ));
+        })
+        .flatten()
+        .map(|(ref_id, ref_seq_pos, _depth)| (ref_id, ref_seq_pos)));
     }
     match_set
 }
