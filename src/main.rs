@@ -265,9 +265,9 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+seq.len()], &seq);
             (read_id.clone(), ref_id, hamming_match.0, start_pos, hamming_match.1)
         })
-        // .filter(|(seq_id, read_id, match_score, hit_pos, match_string)| {
-        //     match_score<=&((seq.len() as f32 * &percent_mismatch) as usize)
-        // })
+        .filter(|(seq_id, read_id, match_score, hit_pos, match_string)| {
+            match_score<=&((seq.len() as f32 * &percent_mismatch) as usize)
+        })
     );
 
 
