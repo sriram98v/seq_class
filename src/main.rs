@@ -151,24 +151,33 @@ fn hamming_distance(ref_seq: &[SeqElement], read_seq: &[SeqElement])->(usize, St
     (count, match_vec)
 }
 
-fn check_pos(ref_seq_len: &usize, depth: &usize, ref_seq_pos: &usize, q_len: &usize)->bool{
-    depth<=ref_seq_pos && (q_len-depth)<=(ref_seq_len-ref_seq_pos)
-}
+// fn check_pos(ref_seq_len: &usize, depth: &usize, ref_seq_pos: &usize, q_len: &usize)->bool{
+//     depth<=ref_seq_pos && (q_len-depth)<=(ref_seq_len-ref_seq_pos)
+// }
 
-fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, _q_seq_id:String, percent_mismatch: f32)->HashSet<(String, usize)>{
+fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, percent_mismatch: f32)->HashSet<(String, usize)>{
     let mut match_set: HashSet<(String, usize)> = HashSet::new();    // ref seq id, start_pos
     let string_len: usize = q_seq.len();
-    let mismatch_lim: usize = (q_seq.len() as f32 * percent_mismatch).floor() as usize;
-    let chunk_size: usize = string_len/(mismatch_lim+1);
+    let num_mismatches: usize = (string_len as f32 * percent_mismatch).floor() as usize;
+    let chunk_size: usize = string_len/(num_mismatches+1);
     if string_len>=chunk_size{
         match_set.par_extend((0..string_len+1-(chunk_size)).into_par_iter().map(|depth| {
             let mut temp_matches: Vec<(String, usize, usize)> = Vec::new();
             for i in tree.find(q_seq[depth..depth+(chunk_size)].to_vec()){
+
+                let start_pos: usize = i.0.split("___").collect::<Vec<&str>>()[1].parse().unwrap();
+                let ref_id = i.0.split("___").collect::<Vec<&str>>()[0].to_string();
+
+                let lmer_match = tree.get_string(&ref_id);
+
+                println!("read: {}\nref: {}\n{}, {}->{}\n", q_seq[depth..depth+chunk_size].iter().map(|x| x.to_string()).collect::<String>(), 
+                            lmer_match[start_pos+1+chunk_size..].iter().map(|x| x.to_string()).collect::<String>(), start_pos, depth, depth+chunk_size);
+
                 temp_matches.push((i.0.split("___").collect::<Vec<&str>>()[0].to_string(), i.0.split("___").collect::<Vec<&str>>()[1].parse().unwrap(), depth));
             }
             temp_matches
         }).flatten()
-        .filter(|(ref_id, ref_seq_pos, depth)| check_pos(&tree.get_string(ref_id).len(), depth, ref_seq_pos, &string_len))
+        // .filter(|(ref_id, ref_seq_pos, depth)| check_pos(&tree.get_string(ref_id).len(), depth, ref_seq_pos, &string_len))
         .map(|(ref_id, ref_seq_pos, _depth)| (ref_id, ref_seq_pos) ));
     }
     match_set
@@ -244,9 +253,7 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             })
             .collect();
             
-        let hits: HashSet<(String, usize)> = query_tree(tree, seq.clone(), read_id.clone(), percent_mismatch);
-
-
+        let hits: HashSet<(String, usize)> = query_tree(tree, seq.clone(), percent_mismatch);
         
         let mut matches: HashSet<(String, String, usize, usize, String)> = HashSet::new();
         
@@ -258,6 +265,9 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+seq.len()], &seq);
             (read_id.clone(), ref_id, hamming_match.0, start_pos, hamming_match.1)
         })
+        // .filter(|(seq_id, read_id, match_score, hit_pos, match_string)| {
+        //     match_score<=&((seq.len() as f32 * &percent_mismatch) as usize)
+        // })
     );
 
 
