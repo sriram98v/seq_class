@@ -80,24 +80,6 @@ fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String
     tree
 }
 
-fn match_prob(_q_seq_match_vec: Vec<bool>, _quality_score_vec: Vec<u8>) -> f32{
-    0.0
-}
-
-fn complement(q_seq: Vec<SeqElement>)->Vec<SeqElement>{
-    q_seq.iter()
-        .map(|x|{
-            match x{
-                SeqElement::T => SeqElement::A,
-                SeqElement::C => SeqElement::G,
-                SeqElement::A => SeqElement::T,
-                SeqElement::G => SeqElement::C,
-                _ => SeqElement::E,
-            }
-        })
-        .collect()
-}
-
 fn hamming_distance(ref_seq: &[SeqElement], read_seq: &[SeqElement])->(usize, String){
     let count = ref_seq.iter().zip(read_seq.iter()).filter(|(x, y)| x!=y).count();
     let match_vec = ref_seq.iter().zip(read_seq.iter()).map(|(x, y)| {
@@ -117,24 +99,26 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, percent_mis
     let num_mismatches: usize = (string_len as f32 * percent_mismatch).floor() as usize;
     let chunk_size: usize = string_len/(num_mismatches+1);
     if string_len>=chunk_size{
-        match_set.par_extend((0..string_len+1-(chunk_size)).into_par_iter().map(|depth| {
-            let mut temp_matches: Vec<(String, usize, usize)> = Vec::new();
-            for i in tree.find(q_seq[depth..depth+(chunk_size)].to_vec()){
+        match_set.par_extend((0..string_len+1-(chunk_size))
+                            .into_par_iter()
+                            .map(|depth| {
+                                let mut temp_matches: Vec<(String, usize, usize)> = Vec::new();
+                                for i in tree.find(q_seq[depth..depth+(chunk_size)].to_vec()){
 
-                let start_pos: usize = i.0.split("___").collect::<Vec<&str>>()[1].parse().unwrap();
-                let ref_id = i.0.split("___").collect::<Vec<&str>>()[0].to_string();
+                                    let start_pos: usize = i.0.split("___").collect::<Vec<&str>>()[1].parse().unwrap();
+                                    let ref_id = i.0.split("___").collect::<Vec<&str>>()[0].to_string();
 
-                let lmer_match = tree.get_string(&ref_id);
+                                    let lmer_match = tree.get_string(&ref_id);
 
-                println!("read: {}\nref: {}\n{}, {}->{}\n", q_seq[depth..depth+chunk_size].iter().map(|x| x.to_string()).collect::<String>(), 
-                            lmer_match[start_pos+1+chunk_size..].iter().map(|x| x.to_string()).collect::<String>(), start_pos, depth, depth+chunk_size);
+                                    println!("read: {}\n ref: {}\n{}, {}->{}\n", q_seq[depth..depth+chunk_size].iter().map(|x| x.to_string()).collect::<String>(), 
+                                                lmer_match[start_pos..start_pos+chunk_size].iter().map(|x| x.to_string()).collect::<String>(), start_pos, depth, depth+chunk_size);
 
-                temp_matches.push((i.0.split("___").collect::<Vec<&str>>()[0].to_string(), i.0.split("___").collect::<Vec<&str>>()[1].parse().unwrap(), depth));
-            }
-            temp_matches
-        })
-        .flatten()
-        .map(|(ref_id, ref_seq_pos, _depth)| (ref_id, ref_seq_pos)));
+                                    temp_matches.push((ref_id, start_pos, depth));
+                                }
+                                temp_matches
+                            })
+                            .flatten()
+                            .map(|(ref_id, ref_seq_pos, depth)| (ref_id, ref_seq_pos)));
     }
     match_set
 }
