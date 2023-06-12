@@ -99,12 +99,6 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, percent_mis
     let num_mismatches: usize = (string_len as f32 * percent_mismatch).floor() as usize;
     let chunk_size: usize = string_len/(num_mismatches+1);
     if string_len>=chunk_size{
-
-        // let temp_matches: Vec<(&String, &u32)> = (0..string_len+1-(chunk_size)).into_iter().map(|depth| {
-        //     let hits = tree.find(q_seq[depth..depth+(chunk_size)].to_vec());
-        //     return hits.iter().map(|hit| (&hit.0.split("___").collect::<Vec<&str>>()[0].to_string(), hit.0.split("___").collect::<Vec<&str>>()[1].parse::<&u32>().unwrap()));
-        // }).flatten().collect::<Vec<(&String, &u32)>>();
-
         match_set.par_extend((0..string_len+1-(chunk_size))
                             .into_par_iter()
                             .map(|depth| {
