@@ -10,9 +10,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::{fs};
 use std::io::Write;
 use error_chain::error_chain;
-use rayon::prelude::*;
 use crate::alphabet::*;
 use crate::utils::*;
+// use rayon::prelude::*;
 
 error_chain! {
     foreign_links {
@@ -98,27 +98,33 @@ fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, percent_mis
     let string_len: usize = q_seq.len();
     let num_mismatches: usize = (string_len as f32 * percent_mismatch).floor() as usize;
     let chunk_size: usize = string_len/(num_mismatches+1);
+    let refs = tree.get_strings();
     if string_len>=chunk_size{
-        match_set.par_extend((0..string_len+1-(chunk_size))
-                            .into_par_iter()
+
+        match_set.extend((0..string_len+1-chunk_size).into_iter()
                             .map(|depth| {
                                 let mut temp_matches: Vec<(String, usize, usize)> = Vec::new();
-                                for i in tree.find(q_seq[depth..depth+(chunk_size)].to_vec()){
-
-                                    let start_pos: usize = i.0.split("___").collect::<Vec<&str>>()[1].parse().unwrap();
+                                let chunk = &q_seq[depth..depth+(chunk_size)].to_vec();
+                                for i in tree.find(chunk){
+                                    let start_pos: usize = i.0.split("___").collect::<Vec<&str>>()[1].parse::<usize>().unwrap() + *i.1 as usize;
                                     let ref_id = i.0.split("___").collect::<Vec<&str>>()[0].to_string();
-
-                                    let lmer_match = tree.get_string(&ref_id);
-
-                                    println!("read: {}\n ref: {}\n{}, {}->{}\n", q_seq[depth..depth+chunk_size].iter().map(|x| x.to_string()).collect::<String>(), 
-                                                lmer_match[start_pos..start_pos+chunk_size].iter().map(|x| x.to_string()).collect::<String>(), start_pos, depth, depth+chunk_size);
-
                                     temp_matches.push((ref_id, start_pos, depth));
                                 }
                                 temp_matches
                             })
                             .flatten()
-                            .map(|(ref_id, ref_seq_pos, depth)| (ref_id, ref_seq_pos)));
+                            .filter(|(_ref_id, start_pos, depth)| {
+                                start_pos>=depth
+                            })
+                            .filter(|(ref_id, start_pos, _depth)| {
+                                start_pos+q_seq.len()<refs.get(ref_id).unwrap().len()
+                            })
+                            .map(|(ref_id, start_pos, depth)| {
+                                let new_start_pos = ((start_pos as isize)-(depth as isize)) as usize;
+                                (ref_id, new_start_pos)
+                            })
+
+        );
     }
     match_set
 }
@@ -194,29 +200,26 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
             .collect();
             
         let hits: HashSet<(String, usize)> = query_tree(tree, seq.clone(), percent_mismatch);
+
         
         let mut matches: HashSet<(String, String, usize, usize, String)> = HashSet::new();
-        
-        matches.par_extend(hits.into_par_iter()
-        .filter(|(ref_id, start_pos)| {
-            start_pos+seq.len()<refs.get(ref_id).unwrap().len()
-        })
-        .map(|(ref_id, start_pos)| {
-            let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+seq.len()], &seq);
-            (read_id.clone(), ref_id, hamming_match.0, start_pos, hamming_match.1)
-        })
-        .filter(|(_seq_id, _read_id, match_score, _hit_pos, _match_string)| {
-            match_score<=&((seq.len() as f32 * &percent_mismatch) as usize)
-        })
-    );
 
+        matches.extend(hits.into_iter()
+                            .map(|(ref_id, start_pos)| {
+                                let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+seq.len()], &seq);
+                                (read_id.clone(), ref_id, hamming_match.0, start_pos, hamming_match.1)
+                            })
+                            .filter(|(_seq_id, _read_id, match_score, _hit_pos, _match_string)| {
+                                match_score<=&((seq.len() as f32 * &percent_mismatch) as usize)
+                            })
+        );
 
         if !matches.is_empty() {
             if !id_flag {
                 id_flag = true;
                 println!("Match found");
             }
-            match_set.par_extend(matches.clone().into_par_iter());
+            match_set.extend(matches.clone().into_iter());
             for (seq_id, read_id, match_score, hit_pos, match_string) in (matches).iter(){
                 let out_string:String = format!("{}\t{}\t{}\t{}\t{}\t{}\n", seq_id, read_id, match_score, hit_pos, seq.len(), match_string);
                 file_ref.write_all(out_string.as_bytes()).expect("write failed");
