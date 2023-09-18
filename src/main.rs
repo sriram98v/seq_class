@@ -1,18 +1,15 @@
 extern crate clap;
 extern crate shrust;
-pub mod alphabet;
 pub mod utils;
 use clap::{arg, Command};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet, HashMap};
 use bio::io::{fasta,  fastq};
 use generalized_suffix_tree::suffix_tree::KGST;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::{fs};
+use std::fs;
 use std::io::Write;
 use error_chain::error_chain;
-use crate::alphabet::*;
 use crate::utils::*;
-// use rayon::prelude::*;
 
 error_chain! {
     foreign_links {
@@ -21,7 +18,7 @@ error_chain! {
     }
 }
 
-fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String>{
+fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<char, String>{
     println!("Building tree from {}", file);
     let reader = fasta::Reader::from_file(file).unwrap();
 
@@ -32,10 +29,9 @@ fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String
         .unwrap()
         .progress_chars("#>-"));
     
-    let mut tree: KGST<SeqElement, String> = KGST::new(SeqElement::E);
+    let mut tree: KGST<char, String> = KGST::new('$');
 
     let reader = fasta::Reader::from_file(file).unwrap();
-    let mut strings:HashMap<String, Vec<SeqElement>> = HashMap::new();
 
     let mut count = 0;
     
@@ -43,44 +39,24 @@ fn build_tree(file:&str, max_depth:usize, num_seq: u32)->KGST<SeqElement, String
 
         let result_data = result.unwrap();
 
-        let x: Vec<char> = result_data.seq()
+        let seq: Vec<char> = result_data.seq()
         .to_vec()
         .iter()
         .map(|x| *x as char)
         .collect();
-        
-        let seq: Vec<SeqElement> = x.iter()
-            .map(|x|{
-                match x{
-                    'A' => SeqElement::A,
-                    'G' => SeqElement::G,
-                    'T' => SeqElement::T,
-                    'C' => SeqElement::C,
-                    _ => SeqElement::E,
-                }
-            })
-            .collect();
-        let string_len = seq.len();
-    
-        if string_len>max_depth{
-            let num_iter = string_len+1-(max_depth);
-            for (n, depth) in (0..num_iter).enumerate(){
-                tree.add_string(seq[depth..depth+(max_depth)].to_vec(), format!("{}___{}", result_data.id(), n));
-            }
             
-        }
-        strings.insert(result_data.id().to_string(), seq);
+        tree.add_string(seq, result_data.id().to_string(), &max_depth);
+
         pb.inc(1);   
         count+=1;
         if count==num_seq {
             break;
         }
     }
-    tree.set_strings(strings);
     tree
 }
 
-fn hamming_distance(ref_seq: &[SeqElement], read_seq: &[SeqElement])->(usize, String){
+fn hamming_distance(ref_seq: &[char], read_seq: &[char])->(usize, String){
     let count = ref_seq.iter().zip(read_seq.iter()).filter(|(x, y)| x!=y).count();
     let match_vec = ref_seq.iter().zip(read_seq.iter()).map(|(x, y)| {
         if x!=y{
@@ -93,43 +69,32 @@ fn hamming_distance(ref_seq: &[SeqElement], read_seq: &[SeqElement])->(usize, St
     (count, match_vec)
 }
 
-fn query_tree(tree:&KGST<SeqElement, String>, q_seq:Vec<SeqElement>, percent_mismatch: f32)->HashSet<(String, usize)>{
-    let mut match_set: HashSet<(String, usize)> = HashSet::new();    // ref seq id, start_pos
+fn query_tree(tree:&KGST<char, String>, q_seq:Vec<char>, percent_mismatch: f32)->Vec<(String, HashSet<usize>)>{
+    let mut match_set: Vec<(String, HashSet<usize>)> = Vec::new();
     let string_len: usize = q_seq.len();
     let num_mismatches: usize = (string_len as f32 * percent_mismatch).floor() as usize;
     let chunk_size: usize = string_len/(num_mismatches+1);
-    let refs = tree.get_strings();
+    let refs: HashMap<String, Vec<char>> = tree.get_strings()
+                                                            .values()
+                                                            .map(|x| (x.0.get_id().clone(), x.0.get_string().clone()))
+                                                            .collect::<HashMap<String, Vec<char>>>();
     if string_len>=chunk_size{
-
-        match_set.extend((0..string_len+1-chunk_size).into_iter()
-                            .map(|depth| {
-                                let mut temp_matches: Vec<(String, usize, usize)> = Vec::new();
-                                let chunk = &q_seq[depth..depth+(chunk_size)].to_vec();
-                                for i in tree.find(chunk){
-                                    let start_pos: usize = i.0.split("___").collect::<Vec<&str>>()[1].parse::<usize>().unwrap() + *i.1 as usize;
-                                    let ref_id = i.0.split("___").collect::<Vec<&str>>()[0].to_string();
-                                    temp_matches.push((ref_id, start_pos, depth));
-                                }
-                                temp_matches
-                            })
-                            .flatten()
-                            .filter(|(_ref_id, start_pos, depth)| {
-                                start_pos>=depth
-                            })
-                            .filter(|(ref_id, start_pos, _depth)| {
-                                start_pos+q_seq.len()<refs.get(ref_id).unwrap().len()
-                            })
-                            .map(|(ref_id, start_pos, depth)| {
-                                let new_start_pos = ((start_pos as isize)-(depth as isize)) as usize;
-                                (ref_id, new_start_pos)
-                            })
-
-        );
+        for depth in 0..string_len+1-chunk_size{
+            let mut temp_matches: Vec<(String, HashSet<usize>)> = Vec::new();
+            let chunk = &q_seq[depth..depth+(chunk_size)].to_vec();
+            for partial_match in tree.find(chunk).iter(){
+                temp_matches.push((partial_match.0.clone(), partial_match.1.iter()
+                                                            .filter(|start_pos| start_pos>=&&depth||start_pos.clone()+q_seq.len()<refs.get(partial_match.0).unwrap().len())
+                                                            .map(|x| x.clone())
+                                                            .collect::<HashSet<usize>>()));
+            }
+            match_set.extend(temp_matches);
+        }
     }
     match_set
 }
 
-fn save_tree(tree: &mut KGST<SeqElement, String>, output_path: String){
+fn save_tree(tree: &mut KGST<char, String>, output_path: String){
     println!("Saving tree to {}.", &output_path);
     std::fs::write(
         output_path,
@@ -138,14 +103,14 @@ fn save_tree(tree: &mut KGST<SeqElement, String>, output_path: String){
     println!("Saved");
 }
 
-fn load_tree(fname:&String) -> KGST<SeqElement, String>{
+fn load_tree(fname:&String) -> KGST<char, String>{
     println!("Loading tree from {}", fname);
     let json_str:String = fs::read_to_string(fname).unwrap();
-    let tree: KGST<SeqElement, String> = serde_json::from_str(&json_str).unwrap();
+    let tree: KGST<char, String> = serde_json::from_str(&json_str).unwrap();
     tree
 }
 
-fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&str, percent_mismatch:f32){
+fn search_fastq(tree:&KGST<char, String>, fastq_file:&str, result_file:&str, percent_mismatch:f32){
     println!("Classifying read file: {}", &fastq_file);
 
     let mut match_set: HashSet<(String, String, usize, usize, String)> = HashSet::new();
@@ -155,8 +120,6 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
     let mut id_flag: bool = false;
 
     let total_size = reader.records().count();
-
-    let refs = tree.get_strings();
 
     let pb = ProgressBar::new(total_size as u64);
     pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
@@ -181,38 +144,30 @@ fn search_fastq(tree:&KGST<SeqElement, String>, fastq_file:&str, result_file:&st
         let _read_qual: Vec<u8> = read_data.qual().to_vec().iter().map(|x| x-33).collect();
         
 
-        let x: Vec<char> = read_data.seq()
+        let seq: Vec<char> = read_data.seq()
         .to_vec()
         .iter()
         .map(|x| *x as char)
         .collect();
-        
-        let seq: Vec<SeqElement> = x.iter()
-            .map(|x|{
-                match x{
-                    'A' => SeqElement::A,
-                    'G' => SeqElement::G,
-                    'T' => SeqElement::T,
-                    'C' => SeqElement::C,
-                    _ => SeqElement::E,
-                }
-            })
-            .collect();
             
-        let hits: HashSet<(String, usize)> = query_tree(tree, seq.clone(), percent_mismatch);
+        let hits: Vec<(String, HashSet<usize>)> = query_tree(tree, seq.clone(), percent_mismatch);
 
         
         let mut matches: HashSet<(String, String, usize, usize, String)> = HashSet::new();
 
-        matches.extend(hits.into_iter()
-                            .map(|(ref_id, start_pos)| {
-                                let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+seq.len()], &seq);
-                                (read_id.clone(), ref_id, hamming_match.0, start_pos, hamming_match.1)
-                            })
-                            .filter(|(_seq_id, _read_id, match_score, _hit_pos, _match_string)| {
-                                match_score<=&((seq.len() as f32 * &percent_mismatch) as usize)
-                            })
-        );
+        for hit in hits.iter(){
+            
+        }
+
+        // matches.extend(hits.into_iter()
+        //                     .map(|(ref_id, start_pos)| {
+        //                         let hamming_match = hamming_distance(&refs.get(&ref_id).unwrap()[start_pos..start_pos+seq.len()], &seq);
+        //                         (read_id.clone(), ref_id, hamming_match.0, start_pos, hamming_match.1)
+        //                     })
+        //                     .filter(|(_seq_id, _read_id, match_score, _hit_pos, _match_string)| {
+        //                         match_score<=&((seq.len() as f32 * &percent_mismatch) as usize)
+        //                     })
+        // );
 
         if !matches.is_empty() {
             if !id_flag {
@@ -324,22 +279,22 @@ fn main() {
     
     match matches.subcommand(){
         Some(("build",  sub_m)) => {
-            let mut tree: KGST<SeqElement, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), *sub_m.get_one::<u32>("num").expect("required"));
+            let mut tree: KGST<char, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), *sub_m.get_one::<u32>("num").expect("required"));
             save_tree(&mut tree, sub_m.get_one::<String>("out").expect("required").to_string());
         },
         Some(("query",  sub_m)) => {
-            let tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
+            let tree: KGST<char, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
             search_fastq(&tree, sub_m.get_one::<String>("reads").expect("required").as_str(), format!("{}.txt", sub_m.get_one::<String>("reads").expect("required")).as_str(), percent_mismatch);
 
         },
         Some(("quick_build",  sub_m)) => {
-            let tree: KGST<SeqElement, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), *sub_m.get_one::<u32>("num").expect("required"));
+            let tree: KGST<char, String> = build_tree(sub_m.get_one::<String>("source").expect("required").as_str(), *sub_m.get_one::<usize>("max").expect("required"), *sub_m.get_one::<u32>("num").expect("required"));
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
             search_fastq(&tree, sub_m.get_one::<String>("reads").expect("required").as_str(), sub_m.get_one::<String>("out").expect("required").as_str(), percent_mismatch);
         },
         Some(("query_dir",  sub_m)) => {
-            let tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
+            let tree: KGST<char, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
             let files = get_files(sub_m.get_one::<String>("read_dir").expect("required").as_str());
             for file in files{
@@ -348,7 +303,7 @@ fn main() {
             }
         },
         Some(("query_dir_all",  sub_m)) => {
-            let tree: KGST<SeqElement, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
+            let tree: KGST<char, String> = load_tree(&sub_m.get_one::<String>("tree").expect("required").to_string());
             let percent_mismatch: f32 = (*sub_m.get_one::<usize>("percent_match").expect("required") as f32)/100.0;
             let files = get_files_all(sub_m.get_one::<String>("read_dir").expect("required").as_str());
             for file in files{
