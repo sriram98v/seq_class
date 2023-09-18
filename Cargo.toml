@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 shrust = "0.0.7"
-generalized_suffix_tree = { path =  "/home/sriramv/Projects/generalized_suffix_tree"}
-bio = "1.1.0"
+generalized_suffix_tree = { git =  "https://github.com/sriram98v/generalized_suffix_tree"}
+bio = "1.3.0"
 indicatif = "0.17.2"
 clap = { version = "4.0", features = ["derive"] }
 serde = "1.0.152"
